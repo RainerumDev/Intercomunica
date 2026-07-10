@@ -17,7 +17,7 @@ export interface CalendarEventPayload {
   tagNames: string[];
 }
 
-function toGoogleEvent(p: CalendarEventPayload) {
+export function toGoogleEvent(p: CalendarEventPayload) {
   const start = p.allDay
     ? { date: p.startsAt.toISOString().slice(0, 10) }
     : { dateTime: p.startsAt.toISOString() };
