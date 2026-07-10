@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+:root {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* FullCalendar tweaks to blend with Tailwind */
+.fc {
+  --fc-border-color: #e5e7eb;
+  --fc-today-bg-color: #eff6ff;
+  --fc-button-bg-color: #1d4ed8;
+  --fc-button-border-color: #1d4ed8;
+  --fc-button-hover-bg-color: #1e40af;
+  --fc-button-hover-border-color: #1e40af;
+  --fc-button-active-bg-color: #1e3a8a;
+  --fc-button-active-border-color: #1e3a8a;
+}
