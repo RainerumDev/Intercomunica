@@ -1,0 +1,208 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Core: configuration & users
+// ---------------------------------------------------------------------------
+
+/// Singleton row (id = 1): master account connection + main Google Group.
+model AppConfig {
+  id                    Int      @id @default(1)
+  masterEmail           String?
+  /// AES-256-GCM encrypted refresh token of the master account
+  masterRefreshTokenEnc String?
+  mainGroupEmail        String?
+  updatedAt             DateTime @updatedAt
+}
+
+enum Role {
+  TEACHER
+  ADMIN
+}
+
+/// A member of the main Google Group (docente) and/or an app user.
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String?
+  picture        String?
+  role           Role     @default(TEACHER)
+  /// still present in the Google Group at last sync
+  isActive       Boolean  @default(true)
+  /// Google Calendar (owned by master account) dedicated to this teacher
+  calendarId     String?  @unique
+  birthDate      DateTime? // WIP B
+  nameDay        String?   // WIP B: onomastico, "MM-DD" or free text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  subgroups      SubgroupMember[]
+  eventInstances EventInstance[]
+  createdEvents  Event[]          @relation("EventCreator")
+}
+
+// ---------------------------------------------------------------------------
+// Flusso 2: sottogruppi
+// ---------------------------------------------------------------------------
+
+model Subgroup {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members SubgroupMember[]
+  events  EventSubgroup[]
+}
+
+model SubgroupMember {
+  subgroupId String
+  userId     String
+  subgroup   Subgroup @relation(fields: [subgroupId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([subgroupId, userId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Flusso 3: eventi, TAG, iniezione calendari
+// ---------------------------------------------------------------------------
+
+model Tag {
+  id     String     @id @default(cuid())
+  name   String     @unique
+  color  String?
+  events EventTag[]
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  location    String?
+  startsAt    DateTime
+  endsAt      DateTime
+  allDay      Boolean  @default(false)
+  /// "Visibile a tutti": true → bacheca only, NOT injected into teacher calendars
+  isGlobal    Boolean  @default(false)
+  createdById String?
+  createdBy   User?    @relation("EventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tags      EventTag[]
+  subgroups EventSubgroup[]
+  instances EventInstance[]
+}
+
+model EventTag {
+  eventId String
+  tagId   String
+  event   Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tag     Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, tagId])
+}
+
+model EventSubgroup {
+  eventId    String
+  subgroupId String
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  subgroup   Subgroup @relation(fields: [subgroupId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, subgroupId])
+}
+
+/// Copy of an Event injected into one teacher's Google Calendar.
+model EventInstance {
+  id            String   @id @default(cuid())
+  eventId       String
+  userId        String
+  calendarId    String
+  googleEventId String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Flusso 1: sync
+// ---------------------------------------------------------------------------
+
+enum SyncStatus {
+  RUNNING
+  SUCCESS
+  ERROR
+}
+
+model SyncLog {
+  id         String     @id @default(cuid())
+  type       String // "group-sync" | "calendar-reconcile"
+  status     SyncStatus @default(RUNNING)
+  message    String?
+  detail     Json?
+  startedAt  DateTime   @default(now())
+  finishedAt DateTime?
+}
+
+// ---------------------------------------------------------------------------
+// WIP A: anagrafica studenti e famiglie (predisposizione)
+// ---------------------------------------------------------------------------
+
+enum SchoolLevel {
+  MEDIA
+  SUPERIORE
+}
+
+model Student {
+  id          String      @id @default(cuid())
+  firstName   String
+  lastName    String
+  email       String?     @unique
+  className   String // es. "1A"
+  classYear   Int // anno di corso: 1..5
+  track       String? // indirizzo: es. "Liceo Scientifico", "ITT"
+  level       SchoolLevel @default(SUPERIORE)
+  birthDate   DateTime? // WIP B
+  nameDay     String? // WIP B
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  guardians Guardian[]
+}
+
+model Guardian {
+  id        String  @id @default(cuid())
+  studentId String
+  name      String
+  email     String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+}
+
+// ---------------------------------------------------------------------------
+// WIP C: import orario scolastico (predisposizione)
+// ---------------------------------------------------------------------------
+
+model TimetableImport {
+  id         String   @id @default(cuid())
+  source     String // "untis" | "edt" | "csv" | "json"
+  payload    Json
+  status     String   @default("RECEIVED") // RECEIVED | PROCESSED | ERROR
+  message    String?
+  receivedAt DateTime @default(now())
+}

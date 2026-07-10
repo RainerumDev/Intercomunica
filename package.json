@@ -1,0 +1,16 @@
+{
+  "name": "intercomunica",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Intercomunica - Rainerum: orchestrazione Google Calendar, sottogruppi docenti, email mirate, bacheca eventi",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace server & npm run dev --workspace web",
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm test --workspace server"
+  }
+}
