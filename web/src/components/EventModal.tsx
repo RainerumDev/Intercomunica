@@ -11,6 +11,7 @@ export interface EventDraft {
   endsAt: string;
   allDay: boolean;
   isGlobal: boolean;
+  bachecaOnly: boolean;
   subgroupIds: string[];
   tagNames: string[];
 }
@@ -19,6 +20,7 @@ interface Props {
   draft: EventDraft;
   subgroups: Subgroup[];
   knownTags: Tag[];
+  readOnly?: boolean;
   onSaved: () => void;
   onDeleted: () => void;
   onClose: () => void;
@@ -28,7 +30,7 @@ function toIso(local: string): string {
   return new Date(local).toISOString();
 }
 
-export default function EventModal({ draft, subgroups, knownTags, onSaved, onDeleted, onClose }: Props) {
+export default function EventModal({ draft, subgroups, knownTags, readOnly, onSaved, onDeleted, onClose }: Props) {
   const [form, setForm] = useState<EventDraft>(draft);
   const [tagInput, setTagInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -63,7 +65,8 @@ export default function EventModal({ draft, subgroups, knownTags, onSaved, onDel
       endsAt: toIso(form.endsAt),
       allDay: form.allDay,
       isGlobal: form.isGlobal,
-      subgroupIds: form.isGlobal ? form.subgroupIds : form.subgroupIds,
+      bachecaOnly: form.bachecaOnly,
+      subgroupIds: form.isGlobal ? [] : form.subgroupIds,
       tagNames: form.tagNames,
     };
     try {
@@ -93,7 +96,7 @@ export default function EventModal({ draft, subgroups, knownTags, onSaved, onDel
     form.title.trim() &&
     form.startsAt &&
     form.endsAt &&
-    (form.isGlobal || form.subgroupIds.length > 0);
+    (form.isGlobal || form.bachecaOnly || form.subgroupIds.length > 0);
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
@@ -103,7 +106,7 @@ export default function EventModal({ draft, subgroups, knownTags, onSaved, onDel
       >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">
-            {isEdit ? "Modifica evento" : "Nuovo evento"}
+            {readOnly ? "Dettagli evento" : isEdit ? "Modifica evento" : "Nuovo evento"}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">
             ×
@@ -114,8 +117,9 @@ export default function EventModal({ draft, subgroups, knownTags, onSaved, onDel
           <input
             value={form.title}
             onChange={(e) => set("title", e.target.value)}
+            disabled={readOnly}
             placeholder="Titolo *"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-medium"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-medium disabled:bg-gray-50 disabled:text-gray-700"
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -125,7 +129,8 @@ export default function EventModal({ draft, subgroups, knownTags, onSaved, onDel
                 type="datetime-local"
                 value={form.startsAt}
                 onChange={(e) => set("startsAt", e.target.value)}
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                disabled={readOnly}
+                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-700"
               />
             </label>
             <label className="text-sm text-gray-600">
@@ -134,48 +139,62 @@ export default function EventModal({ draft, subgroups, knownTags, onSaved, onDel
                 type="datetime-local"
                 value={form.endsAt}
                 onChange={(e) => set("endsAt", e.target.value)}
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                disabled={readOnly}
+                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-700"
               />
             </label>
           </div>
 
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center gap-6">
             <label className="flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
                 checked={form.allDay}
+                disabled={readOnly}
                 onChange={(e) => set("allDay", e.target.checked)}
               />
               Tutto il giorno
             </label>
-            <label className="flex items-center gap-2 text-sm text-gray-700" title="Se attivo, l'evento appare solo in bacheca e NON nei calendari dei docenti">
+            <label className="flex items-center gap-2 text-sm text-gray-700" title="Se attivo, l'evento coinvolge tutti i docenti (ignora i sottogruppi)">
               <input
                 type="checkbox"
                 checked={form.isGlobal}
+                disabled={readOnly}
                 onChange={(e) => set("isGlobal", e.target.checked)}
               />
-              🌍 Visibile a tutti (solo bacheca)
+              🌍 Visibile a tutti
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-700" title="Se attivo, l'evento non verrà inserito in alcun calendario Google">
+              <input
+                type="checkbox"
+                checked={form.bachecaOnly}
+                disabled={readOnly}
+                onChange={(e) => set("bachecaOnly", e.target.checked)}
+              />
+              📌 Solo bacheca
             </label>
           </div>
 
           <input
             value={form.location}
             onChange={(e) => set("location", e.target.value)}
+            disabled={readOnly}
             placeholder="Luogo"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-700"
           />
           <textarea
             value={form.description}
             onChange={(e) => set("description", e.target.value)}
+            disabled={readOnly}
             placeholder="Descrizione"
             rows={3}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-700"
           />
 
           {/* Sottogruppi destinatari */}
           <div>
             <p className="text-sm font-medium text-gray-700 mb-1.5">
-              Sottogruppi destinatari {form.isGlobal && <span className="text-gray-400">(ignorati per eventi globali)</span>}
+              Sottogruppi destinatari {form.isGlobal && <span className="text-gray-400">(ignorati per eventi visibili a tutti)</span>}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {subgroups.map((s) => {
@@ -183,12 +202,15 @@ export default function EventModal({ draft, subgroups, knownTags, onSaved, onDel
                 return (
                   <button
                     key={s.id}
-                    onClick={() => toggleSubgroup(s.id)}
+                    onClick={() => {
+                      if (!readOnly) toggleSubgroup(s.id);
+                    }}
+                    disabled={readOnly}
                     className={`rounded-full px-3 py-1 text-xs font-medium border ${
                       on
                         ? "bg-blue-100 border-blue-300 text-blue-800"
                         : "bg-white border-gray-200 text-gray-500 hover:border-blue-300"
-                    }`}
+                    } ${readOnly && !on ? "opacity-50" : ""}`}
                   >
                     {s.name}
                   </button>
@@ -210,20 +232,23 @@ export default function EventModal({ draft, subgroups, knownTags, onSaved, onDel
                   className="inline-flex items-center gap-1 rounded-full bg-purple-100 text-purple-800 px-3 py-1 text-xs font-medium"
                 >
                   {t}
-                  <button
-                    onClick={() => set("tagNames", form.tagNames.filter((x) => x !== t))}
-                    className="text-purple-500 hover:text-purple-900"
-                  >
-                    ×
-                  </button>
+                  {!readOnly && (
+                    <button
+                      onClick={() => set("tagNames", form.tagNames.filter((x) => x !== t))}
+                      className="text-purple-500 hover:text-purple-900"
+                    >
+                      ×
+                    </button>
+                  )}
                 </span>
               ))}
             </div>
-            <div className="flex gap-2">
-              <input
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={(e) => {
+            {!readOnly && (
+              <div className="flex gap-2">
+                <input
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
                     addTag(tagInput);
@@ -246,12 +271,13 @@ export default function EventModal({ draft, subgroups, knownTags, onSaved, onDel
                 +
               </button>
             </div>
+            )}
           </div>
 
           {error && <p className="rounded bg-red-50 text-red-700 px-3 py-2 text-sm">{error}</p>}
 
           <div className="flex justify-between pt-2">
-            {isEdit ? (
+            {isEdit && !readOnly ? (
               <button
                 onClick={remove}
                 disabled={busy}
@@ -267,15 +293,17 @@ export default function EventModal({ draft, subgroups, knownTags, onSaved, onDel
                 onClick={onClose}
                 className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
-                Annulla
+                {readOnly ? "Chiudi" : "Annulla"}
               </button>
-              <button
-                onClick={save}
-                disabled={busy || !valid}
-                className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
-              >
-                {busy ? "Salvataggio…" : "Salva"}
-              </button>
+              {!readOnly && (
+                <button
+                  onClick={save}
+                  disabled={busy || !valid}
+                  className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
+                >
+                  {busy ? "Salvataggio…" : "Salva"}
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -24,11 +24,11 @@ function Nav() {
             <NavLink to="/directory" className={linkClass}>
               Gruppi & Docenti
             </NavLink>
+            <NavLink to="/calendario" className={linkClass}>
+              Calendario
+            </NavLink>
             {me?.role === "ADMIN" && (
               <>
-                <NavLink to="/calendario" className={linkClass}>
-                  Calendario
-                </NavLink>
                 <NavLink to="/admin/settings" className={linkClass}>
                   Impostazioni
                 </NavLink>
@@ -73,9 +73,9 @@ export default function App() {
           <Route path="/" element={<Bacheca />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="/directory" element={<Directory />} />
+          <Route path="/calendario" element={<Calendario />} />
           {me.role === "ADMIN" && (
             <>
-              <Route path="/calendario" element={<Calendario />} />
               <Route path="/admin/settings" element={<AdminSettings />} />
             </>
           )}

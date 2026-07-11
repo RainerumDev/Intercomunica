@@ -20,6 +20,7 @@ export interface Subgroup {
   id: string;
   name: string;
   description: string | null;
+  folder?: string | null;
   members: { id: string; email: string; name: string | null }[];
 }
 
@@ -38,6 +39,7 @@ export interface AppEvent {
   endsAt: string;
   allDay: boolean;
   isGlobal: boolean;
+  bachecaOnly: boolean;
   tags: Tag[];
   subgroupIds: string[];
   instanceCount?: number;
@@ -55,6 +57,7 @@ export interface BachecaSection {
     endsAt: string;
     allDay: boolean;
     isGlobal: boolean;
+    bachecaOnly: boolean;
     tags: string[];
   }[];
 }

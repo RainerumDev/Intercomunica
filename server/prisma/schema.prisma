@@ -59,6 +59,7 @@ model Subgroup {
   id          String   @id @default(cuid())
   name        String   @unique
   description String?
+  folder      String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -95,8 +96,10 @@ model Event {
   startsAt    DateTime
   endsAt      DateTime
   allDay      Boolean  @default(false)
-  /// "Visibile a tutti": true → bacheca only, NOT injected into teacher calendars
+  /// "Visibile a tutti": true → injected to all teachers
   isGlobal    Boolean  @default(false)
+  /// "Solo bacheca": true → NOT injected into teacher calendars
+  bachecaOnly Boolean  @default(false)
   createdById String?
   createdBy   User?    @relation("EventCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())

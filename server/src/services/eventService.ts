@@ -15,6 +15,7 @@ export interface EventInput {
   endsAt: Date;
   allDay: boolean;
   isGlobal: boolean;
+  bachecaOnly: boolean;
   subgroupIds: string[];
   tagNames: string[];
 }
@@ -86,13 +87,14 @@ export async function createEvent(input: EventInput, createdById?: string): Prom
       endsAt: input.endsAt,
       allDay: input.allDay,
       isGlobal: input.isGlobal,
+      bachecaOnly: input.bachecaOnly,
       createdById,
       tags: { create: tagIds.map((tagId) => ({ tagId })) },
       subgroups: { create: input.subgroupIds.map((subgroupId) => ({ subgroupId })) },
     },
   });
 
-  if (!input.isGlobal) {
+  if (!input.bachecaOnly) {
     await injectForTargets(event.id);
   }
   return loadEvent(event.id);
@@ -102,7 +104,9 @@ export async function createEvent(input: EventInput, createdById?: string): Prom
 async function injectForTargets(eventId: string): Promise<void> {
   const event = await loadEvent(eventId);
   const payload = eventToCalendarPayload(event);
-  const targets = await targetUsers(event.subgroups.map((s) => s.subgroupId));
+  const targets = event.isGlobal
+    ? await prisma.user.findMany({ where: { isActive: true, calendarId: { not: null } } })
+    : await targetUsers(event.subgroups.map((s) => s.subgroupId));
   const existing = await prisma.eventInstance.findMany({ where: { eventId } });
   const existingUserIds = new Set(existing.map((i) => i.userId));
 
@@ -132,6 +136,7 @@ export async function updateEvent(eventId: string, input: EventInput): Promise<E
       endsAt: input.endsAt,
       allDay: input.allDay,
       isGlobal: input.isGlobal,
+      bachecaOnly: input.bachecaOnly,
       tags: { deleteMany: {}, create: tagIds.map((tagId) => ({ tagId })) },
       subgroups: { deleteMany: {}, create: input.subgroupIds.map((subgroupId) => ({ subgroupId })) },
     },
@@ -141,8 +146,8 @@ export async function updateEvent(eventId: string, input: EventInput): Promise<E
   const payload = eventToCalendarPayload(event);
   const instances = await prisma.eventInstance.findMany({ where: { eventId } });
 
-  if (input.isGlobal) {
-    // global → remove every injected copy
+  if (input.bachecaOnly) {
+    // bachecaOnly -> remove every injected copy
     for (const inst of instances) {
       await gDeleteEvent(inst.calendarId, inst.googleEventId);
       await prisma.eventInstance.delete({ where: { id: inst.id } });
@@ -150,7 +155,9 @@ export async function updateEvent(eventId: string, input: EventInput): Promise<E
     return event;
   }
 
-  const targets = await targetUsers(input.subgroupIds);
+  const targets = input.isGlobal
+    ? await prisma.user.findMany({ where: { isActive: true, calendarId: { not: null } } })
+    : await targetUsers(input.subgroupIds);
   const targetIds = new Set(targets.map((u) => u.id));
 
   for (const inst of instances) {

@@ -24,6 +24,7 @@ subgroupsRouter.get(
         id: s.id,
         name: s.name,
         description: s.description,
+        folder: s.folder,
         members: s.members
           .filter((m) => m.user.isActive)
           .map((m) => ({ id: m.user.id, email: m.user.email, name: m.user.name })),
@@ -35,6 +36,7 @@ subgroupsRouter.get(
 const subgroupSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).optional().nullable(),
+  folder: z.string().trim().max(120).optional().nullable(),
 });
 
 subgroupsRouter.post(
@@ -44,7 +46,7 @@ subgroupsRouter.post(
     const body = parseBody(subgroupSchema, req, res);
     if (!body) return;
     const created = await prisma.subgroup.create({
-      data: { name: body.name, description: body.description ?? null },
+      data: { name: body.name, description: body.description ?? null, folder: body.folder ?? null },
     });
     res.status(201).json(created);
   })
@@ -58,7 +60,7 @@ subgroupsRouter.put(
     if (!body) return;
     const updated = await prisma.subgroup.update({
       where: { id: req.params.id },
-      data: { name: body.name, description: body.description ?? null },
+      data: { name: body.name, description: body.description ?? null, folder: body.folder ?? null },
     });
     res.json(updated);
   })

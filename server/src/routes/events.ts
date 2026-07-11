@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
-import { requireAdmin } from "../auth/session.js";
+import { requireAdmin, requireAuth } from "../auth/session.js";
 import { createEvent, updateEvent, deleteEventEverywhere } from "../services/eventService.js";
 import { h, parseBody } from "./helpers.js";
 
@@ -16,12 +16,13 @@ const eventSchema = z
     endsAt: z.coerce.date(),
     allDay: z.boolean().default(false),
     isGlobal: z.boolean().default(false),
+    bachecaOnly: z.boolean().default(false),
     subgroupIds: z.array(z.string()).default([]),
     tagNames: z.array(z.string().trim().min(1).max(60)).default([]),
   })
   .refine((e) => e.endsAt >= e.startsAt, { message: "endsAt precedente a startsAt" })
-  .refine((e) => e.isGlobal || e.subgroupIds.length > 0, {
-    message: "Selezionare almeno un sottogruppo (o attivare 'Visibile a tutti')",
+  .refine((e) => e.isGlobal || e.bachecaOnly || e.subgroupIds.length > 0, {
+    message: "Selezionare almeno un sottogruppo (o attivare 'Visibile a tutti' / 'Solo bacheca')",
   });
 
 function serialize(e: {
@@ -33,6 +34,7 @@ function serialize(e: {
   endsAt: Date;
   allDay: boolean;
   isGlobal: boolean;
+  bachecaOnly: boolean;
   tags: { tag: { id: string; name: string; color: string | null } }[];
   subgroups: { subgroupId: string }[];
   _count?: { instances: number };
@@ -46,6 +48,7 @@ function serialize(e: {
     endsAt: e.endsAt,
     allDay: e.allDay,
     isGlobal: e.isGlobal,
+    bachecaOnly: e.bachecaOnly,
     tags: e.tags.map((t) => ({ id: t.tag.id, name: t.tag.name, color: t.tag.color })),
     subgroupIds: e.subgroups.map((s) => s.subgroupId),
     instanceCount: e._count?.instances,
@@ -61,7 +64,7 @@ const includeRelations = {
 /** Admin calendar view: events in a date range (?from=&to=). */
 eventsRouter.get(
   "/",
-  requireAdmin,
+  requireAuth,
   h(async (req, res) => {
     const from = req.query.from ? new Date(String(req.query.from)) : new Date(Date.now() - 30 * 86400e3);
     const to = req.query.to ? new Date(String(req.query.to)) : new Date(Date.now() + 90 * 86400e3);
