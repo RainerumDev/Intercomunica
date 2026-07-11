@@ -45,6 +45,9 @@ export default function Calendario() {
   const filteredEvents = events.filter((e) => {
     if (!filterSubgroupId) return true;
     if (e.isGlobal) return true; // Events visible to all bypass the subgroup filter
+    if (filterSubgroupId === "MY_EVENTS") {
+      return e.subgroupIds.some((id) => me?.subgroups.some((ms) => ms.id === id));
+    }
     return e.subgroupIds.includes(filterSubgroupId);
   });
 
@@ -105,6 +108,7 @@ export default function Calendario() {
             className="rounded-md border border-gray-300 px-3 py-2 text-sm"
           >
             <option value="">Tutti i sottogruppi</option>
+            <option value="MY_EVENTS">I miei impegni</option>
             {subgroups.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}

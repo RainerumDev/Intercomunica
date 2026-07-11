@@ -15,7 +15,14 @@ export default function Directory() {
   const [emailTarget, setEmailTarget] = useState<Subgroup | null>(null);
   const [newSubgroup, setNewSubgroup] = useState("");
   const [newFolder, setNewFolder] = useState("");
+  const [editingSubgroup, setEditingSubgroup] = useState<Subgroup | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const EditIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+    </svg>
+  );
 
   const TrashIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -95,6 +102,45 @@ export default function Directory() {
     }
   };
 
+  const updateSubgroup = async (s: Subgroup) => {
+    setError(null);
+    try {
+      await api.put(`/api/subgroups/${s.id}`, { name: s.name.trim(), folder: s.folder?.trim() || null });
+      setEditingSubgroup(null);
+      await reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const handleModalAddMember = async (m: Member) => {
+    if (!editingSubgroup) return;
+    try {
+      await api.post(`/api/subgroups/${editingSubgroup.id}/members`, { userId: m.id });
+      setEditingSubgroup({
+        ...editingSubgroup,
+        members: [...editingSubgroup.members, { id: m.id, email: m.email, name: m.name }]
+      });
+      reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const handleModalRemoveMember = async (mId: string) => {
+    if (!editingSubgroup) return;
+    try {
+      await api.delete(`/api/subgroups/${editingSubgroup.id}/members/${mId}`);
+      setEditingSubgroup({
+        ...editingSubgroup,
+        members: editingSubgroup.members.filter(x => x.id !== mId)
+      });
+      reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   const deleteSubgroup = async (s: Subgroup) => {
     if (!window.confirm(`Eliminare il sottogruppo «${s.name}»?`)) return;
     setError(null);
@@ -135,13 +181,22 @@ export default function Directory() {
                         <p className="text-xs text-gray-500">{s.members.length} membri</p>
                       </div>
                       {isAdmin && (
-                        <button
-                          onClick={() => deleteSubgroup(s)}
-                          title="Elimina sottogruppo"
-                          className="text-gray-400 hover:text-red-600 shrink-0 mt-0.5"
-                        >
-                          <TrashIcon />
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                          <button
+                            onClick={() => setEditingSubgroup(s)}
+                            title="Modifica sottogruppo"
+                            className="text-gray-400 hover:text-blue-600"
+                          >
+                            <EditIcon />
+                          </button>
+                          <button
+                            onClick={() => deleteSubgroup(s)}
+                            title="Elimina sottogruppo"
+                            className="text-gray-400 hover:text-red-600"
+                          >
+                            <TrashIcon />
+                          </button>
+                        </div>
                       )}
                     </div>
                     <button
@@ -251,6 +306,66 @@ export default function Directory() {
       </section>
 
       {emailTarget && <EmailComposer subgroup={emailTarget} onClose={() => setEmailTarget(null)} />}
+
+      {editingSubgroup && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => setEditingSubgroup(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white shadow-xl p-6" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Modifica sottogruppo</h2>
+            <div className="space-y-4">
+              <input
+                value={editingSubgroup.name}
+                onChange={(e) => setEditingSubgroup({ ...editingSubgroup, name: e.target.value })}
+                placeholder="Nome *"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              />
+              <input
+                value={editingSubgroup.folder || ""}
+                onChange={(e) => setEditingSubgroup({ ...editingSubgroup, folder: e.target.value })}
+                placeholder="Cartella (opzionale)"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                list="folders"
+              />
+              
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Membri del gruppo</h3>
+                <div className="max-h-60 overflow-y-auto space-y-1 pr-2 text-sm">
+                  {editingSubgroup.members.map(m => (
+                    <div key={m.id} className="flex justify-between items-center py-1">
+                      <span className="truncate" title={m.email}>{m.name || m.email}</span>
+                      <button onClick={() => handleModalRemoveMember(m.id)} className="text-red-600 hover:text-red-800 ml-2 shrink-0">Rimuovi</button>
+                    </div>
+                  ))}
+                  {editingSubgroup.members.length === 0 && <p className="text-gray-400 text-xs py-1">Nessun docente in questo gruppo.</p>}
+                  
+                  <h3 className="text-sm font-semibold text-gray-700 mt-4 mb-2">Altri docenti</h3>
+                  {members.filter(m => !editingSubgroup.members.some(em => em.id === m.id)).map(m => (
+                    <div key={m.id} className="flex justify-between items-center py-1">
+                      <span className="truncate text-gray-500" title={m.email}>{m.name || m.email}</span>
+                      <button onClick={() => handleModalAddMember(m)} className="text-blue-600 hover:text-blue-800 ml-2 shrink-0">Aggiungi</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setEditingSubgroup(null)}
+                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Annulla
+                </button>
+                <button
+                  onClick={() => updateSubgroup(editingSubgroup)}
+                  disabled={!editingSubgroup.name.trim()}
+                  className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
+                >
+                  Salva
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
