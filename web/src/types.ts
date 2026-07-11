@@ -65,6 +65,15 @@ export interface AdminConfig {
   mainGroupEmail: string | null;
 }
 
+export interface SyncLogEntry {
+  id: string;
+  type: string;
+  status: "RUNNING" | "SUCCESS" | "ERROR";
+  message: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
 export interface SyncResult {
   added: string[];
   deactivated: string[];

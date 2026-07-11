@@ -31,12 +31,17 @@ adminRouter.get("/master/connect", requireAdmin, (_req, res) => {
 });
 
 /**
- * Master OAuth callback. NOTE: reached via Google redirect, so the admin's
- * session cookie authenticates the browser; we still verify signed state.
+ * Master OAuth callback. Reached via Google redirect (top-level GET, so the
+ * sameSite=lax session cookie is sent): require an ADMIN session in addition
+ * to the signed state.
  */
 adminRouter.get(
   "/master/callback",
   h(async (req, res) => {
+    if (req.user?.role !== "ADMIN") {
+      res.redirect(`${config().WEB_URL}/login?error=oauth`);
+      return;
+    }
     const { code, state, error } = req.query;
     if (error || typeof code !== "string" || typeof state !== "string" || !verifyState(state, "master")) {
       res.redirect(`${config().WEB_URL}/admin/settings?error=oauth`);

@@ -1,4 +1,5 @@
 import { calendarApi } from "./master.js";
+import { withRetry } from "./retry.js";
 
 export const EXT_PROP_APP = "intercomunica"; // marker: event managed by this app
 export const EXT_PROP_EVENT_ID = "intercomunicaEventId";
@@ -44,28 +45,34 @@ export function toGoogleEvent(p: CalendarEventPayload) {
 /** Create a dedicated calendar in the master account for a teacher and share it read-only. */
 export async function createTeacherCalendar(teacherEmail: string, displayName: string): Promise<string> {
   const cal = await calendarApi();
-  const created = await cal.calendars.insert({
-    requestBody: {
-      summary: displayName,
-      description: `Calendario Intercomunica per ${teacherEmail} (gestito automaticamente)`,
-      timeZone: "Europe/Rome",
-    },
-  });
+  const created = await withRetry(() =>
+    cal.calendars.insert({
+      requestBody: {
+        summary: displayName,
+        description: `Calendario Intercomunica per ${teacherEmail} (gestito automaticamente)`,
+        timeZone: "Europe/Rome",
+      },
+    })
+  );
   const calendarId = created.data.id;
   if (!calendarId) throw new Error("Google non ha restituito l'ID del calendario creato");
-  await cal.acl.insert({
-    calendarId,
-    requestBody: {
-      role: "reader",
-      scope: { type: "user", value: teacherEmail },
-    },
-  });
+  await withRetry(() =>
+    cal.acl.insert({
+      calendarId,
+      requestBody: {
+        role: "reader",
+        scope: { type: "user", value: teacherEmail },
+      },
+    })
+  );
   return calendarId;
 }
 
 export async function insertEvent(calendarId: string, payload: CalendarEventPayload): Promise<string> {
   const cal = await calendarApi();
-  const res = await cal.events.insert({ calendarId, requestBody: toGoogleEvent(payload) });
+  const res = await withRetry(() =>
+    cal.events.insert({ calendarId, requestBody: toGoogleEvent(payload) })
+  );
   if (!res.data.id) throw new Error("Google non ha restituito l'ID dell'evento creato");
   return res.data.id;
 }
@@ -76,13 +83,15 @@ export async function updateEvent(
   payload: CalendarEventPayload
 ): Promise<void> {
   const cal = await calendarApi();
-  await cal.events.update({ calendarId, eventId: googleEventId, requestBody: toGoogleEvent(payload) });
+  await withRetry(() =>
+    cal.events.update({ calendarId, eventId: googleEventId, requestBody: toGoogleEvent(payload) })
+  );
 }
 
 export async function deleteEvent(calendarId: string, googleEventId: string): Promise<void> {
   const cal = await calendarApi();
   try {
-    await cal.events.delete({ calendarId, eventId: googleEventId });
+    await withRetry(() => cal.events.delete({ calendarId, eventId: googleEventId }));
   } catch (err: unknown) {
     // already gone → fine (reconciliation-friendly)
     const code = (err as { code?: number }).code;
@@ -96,14 +105,16 @@ export async function listAppEvents(calendarId: string): Promise<{ googleEventId
   const out: { googleEventId: string; appEventId?: string }[] = [];
   let pageToken: string | undefined;
   do {
-    const res = await cal.events.list({
-      calendarId,
-      privateExtendedProperty: [`${EXT_PROP_APP}=true`],
-      maxResults: 2500,
-      pageToken,
-      showDeleted: false,
-      singleEvents: false,
-    });
+    const res = await withRetry(() =>
+      cal.events.list({
+        calendarId,
+        privateExtendedProperty: [`${EXT_PROP_APP}=true`],
+        maxResults: 2500,
+        pageToken,
+        showDeleted: false,
+        singleEvents: false,
+      })
+    );
     for (const e of res.data.items ?? []) {
       if (e.id) {
         out.push({

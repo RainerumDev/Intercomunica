@@ -1,4 +1,5 @@
 import { gmailApi } from "./master.js";
+import { withRetry } from "./retry.js";
 
 export interface SendEmailInput {
   to: string[];
@@ -32,7 +33,9 @@ export async function sendEmail(input: SendEmailInput): Promise<string> {
     "utf8"
   ).toString("base64url");
 
-  const res = await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
+  const res = await withRetry(() =>
+    gmail.users.messages.send({ userId: "me", requestBody: { raw } })
+  );
   if (!res.data.id) throw new Error("Gmail non ha restituito l'ID del messaggio inviato");
   return res.data.id;
 }

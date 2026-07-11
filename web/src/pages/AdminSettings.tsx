@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { AdminConfig, SyncResult } from "../types";
+import type { AdminConfig, SyncLogEntry, SyncResult } from "../types";
 
 interface GroupOption {
   email: string;
@@ -14,7 +14,11 @@ export default function AdminSettings() {
   const [manualGroup, setManualGroup] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [syncLogs, setSyncLogs] = useState<SyncLogEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const loadLogs = () =>
+    api.get<SyncLogEntry[]>("/api/admin/synclogs").then(setSyncLogs);
 
   const loadConfig = () =>
     api.get<AdminConfig>("/api/admin/config").then((c) => {
@@ -23,7 +27,7 @@ export default function AdminSettings() {
     });
 
   useEffect(() => {
-    loadConfig().catch((e: Error) => setError(e.message));
+    Promise.all([loadConfig(), loadLogs()]).catch((e: Error) => setError(e.message));
   }, []);
 
   const loadGroups = async () => {
@@ -56,6 +60,7 @@ export default function AdminSettings() {
       setError((e as Error).message);
     } finally {
       setSyncing(false);
+      loadLogs().catch(() => {});
     }
   };
 
@@ -171,6 +176,47 @@ export default function AdminSettings() {
         >
           {syncing ? "Sincronizzazione in corso…" : "🔄 Sincronizza / Refresh"}
         </button>
+        {syncLogs.length > 0 && (
+          <div className="mt-4">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">Storico sincronizzazioni</h3>
+            <div className="overflow-x-auto rounded border border-gray-200">
+              <table className="min-w-full text-xs">
+                <thead className="bg-gray-50 text-left text-gray-600">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Avviata</th>
+                    <th className="px-3 py-2 font-medium">Esito</th>
+                    <th className="px-3 py-2 font-medium">Dettagli</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {syncLogs.map((l) => (
+                    <tr key={l.id}>
+                      <td className="px-3 py-2 whitespace-nowrap text-gray-600">
+                        {new Date(l.startedAt).toLocaleString("it-IT")}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={`rounded-full px-2 py-0.5 font-medium ${
+                            l.status === "SUCCESS"
+                              ? "bg-green-100 text-green-800"
+                              : l.status === "ERROR"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {l.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-gray-600 max-w-md truncate" title={l.message ?? ""}>
+                        {l.message ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
         {syncResult && (
           <div className="mt-4 rounded bg-gray-50 border border-gray-200 p-4 text-sm space-y-1">
             <p>Nuovi docenti: {syncResult.added.length}</p>

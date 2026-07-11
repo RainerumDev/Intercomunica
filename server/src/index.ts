@@ -1,5 +1,8 @@
 import express from "express";
 import cookieParser from "cookie-parser";
+import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { Request, Response, NextFunction } from "express";
 import { config } from "./config.js";
 import { sessionMiddleware } from "./auth/session.js";
@@ -34,6 +37,19 @@ export function createApp(): express.Express {
   app.use("/api/email", emailRouter);
   app.use("/api/bacheca", bachecaRouter);
   app.use("/api/wip", wipRouter);
+
+  // production: serve the built frontend (SPA fallback for client routes)
+  const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../web/dist");
+  if (config().NODE_ENV === "production" && fs.existsSync(webDist)) {
+    app.use(express.static(webDist));
+    app.get("*", (req, res, next) => {
+      if (req.path.startsWith("/api/")) {
+        next();
+        return;
+      }
+      res.sendFile(path.join(webDist, "index.html"));
+    });
+  }
 
   // error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
