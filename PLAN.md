@@ -45,7 +45,7 @@
 - [x] Domain restriction on login (`hd` param + server-side ALLOWED_EMAIL_DOMAIN check) — iter 2
 - [x] Google error mapping (403 Directory/Gmail, invalid_grant, 429) → actionable messages instead of 500 — iter 2
 - [x] Manual group email input fallback in settings (works without Directory list privilege) — iter 2
-- [ ] Optional: Cloud Identity API path for member listing without admin role (only if school refuses delegated role — user decision pending)
+- [x] Cloud Identity API path for member listing without admin role — iter 3 (school can't grant admin role to master). listGroupMembers → cloudidentity memberships.list (direct members only, nested groups skipped; no suspended-status filter — share errors surface per-user in sync). listGroups still Admin SDK (optional dropdown; manual input is the fallback).
 - [ ] Master callback: verify admin session on callback (state is signed but callback route lacks requireAdmin — browser session check)
 - [ ] Tag CRUD admin UI (rename/color/delete)
 - [ ] Bacheca: subscribe/ical link to personal calendar; show tag colors from DB
@@ -59,5 +59,6 @@
 - `npm run build --workspaces`
 
 ## Iteration log
+- **Iter 3 (2026-07-11)**: Option B implemented — member listing via Cloud Identity API (no admin role needed, group visibility suffices). New scope cloud-identity.groups.readonly in MASTER_SCOPES → user must RECONNECT master account. CLOUD_IDENTITY_FORBIDDEN error mapping (API disabled vs member visibility). 21 tests green. User actions required: enable Cloud Identity API in GCP project, reconnect master, save group email manually, run sync.
 - **Iter 2 (2026-07-11)**: User hit real-world 403 on Directory groups.list — master account lacks Workspace admin privileges (needs delegated role "Admin API → Gruppi → Lettura"; instructions given to user + README). Added: google/errors.ts mapping (DIRECTORY_FORBIDDEN, GMAIL_FORBIDDEN, MASTER_TOKEN_REVOKED, GOOGLE_RATE_LIMITED) wired into error middleware; manual group-email input in AdminSettings as fallback; ALLOWED_EMAIL_DOMAIN login restriction (hd hint + server check, login?error=domain message). 17 tests green.
 - **Iter 1 (2026-07-10)**: Full MVP implemented end-to-end. Backend: Prisma schema (core + WIP models), OAuth login + master offline connect (encrypted refresh token), Directory/Calendar/Gmail wrappers, sync service (membership diff + calendar provisioning + event reconciliation), event service (create/update/delete with per-teacher injection + global flag), bacheca service (3-per-TAG), email send (To/Bcc, Reply-To sender). Frontend: login, bacheca, directory (subgroup chips + search + email composer), FullCalendar admin calendar (month/week/day/list) + event modal, admin settings (connect/group/sync). 11 unit tests green, typecheck + build clean, server boot smoke-tested. NOT yet verified against real Google APIs/DB.

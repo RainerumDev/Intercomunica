@@ -27,11 +27,12 @@ Applicazione web per l'orchestrazione di Google Calendar, la gestione di sottogr
 - Un progetto su [Google Cloud Console](https://console.cloud.google.com) del workspace dell'istituto
 
 ### 2. Google Cloud Console
-1. Abilita le API: **Google Calendar API**, **Admin SDK API**, **Gmail API**.
+1. Abilita le API: **Google Calendar API**, **Cloud Identity API**, **Gmail API** (opz. **Admin SDK API**, vedi sotto).
 2. Crea credenziali **OAuth client ID** (tipo *Web application*) con redirect URI:
    - `http://localhost:3000/api/auth/google/callback`
    - `http://localhost:3000/api/admin/master/callback`
-3. **Privilegi Directory per l'account master** — l'API Directory richiede che l'account chiamante sia amministratore (anche delegato). In Admin Console: *Account → Ruoli amministratore → Crea nuovo ruolo* con privilegio **Admin API → Gruppi → Lettura** (opz. *Utenti → Lettura*), poi assegnarlo all'account master. Senza questo privilegio l'elenco gruppi restituisce `DIRECTORY_FORBIDDEN`; in tal caso è comunque possibile inserire manualmente l'email del gruppo nelle Impostazioni.
+3. **Lettura membri del gruppo — senza ruolo admin.** L'app usa la **Cloud Identity API**: basta che l'account master possa vedere i membri del gruppo (impostazione del gruppo *«Chi può visualizzare i membri»*, es. tutta l'organizzazione). Non serve che sia membro né amministratore.
+4. **Elenco gruppi del dominio (opzionale).** Il menu a tendina "Carica gruppi del dominio" usa l'Admin SDK e richiede un ruolo delegato con privilegio **Admin API → Gruppi → Lettura**. Senza ruolo si usa l'inserimento manuale dell'email del gruppo nelle Impostazioni (equivalente).
 
 ### 3. Configurazione
 ```bash

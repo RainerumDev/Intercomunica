@@ -30,6 +30,10 @@ export async function directoryApi() {
   return google.admin({ version: "directory_v1", auth: await masterAuth() });
 }
 
+export async function cloudIdentityApi() {
+  return google.cloudidentity({ version: "v1", auth: await masterAuth() });
+}
+
 export async function gmailApi() {
   return google.gmail({ version: "v1", auth: await masterAuth() });
 }

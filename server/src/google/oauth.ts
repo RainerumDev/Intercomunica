@@ -11,6 +11,9 @@ export const MASTER_SCOPES = [
   "openid",
   "email",
   "https://www.googleapis.com/auth/calendar",
+  // member listing without admin privileges (caller needs group visibility only)
+  "https://www.googleapis.com/auth/cloud-identity.groups.readonly",
+  // domain group listing — optional, works only with a delegated admin role
   "https://www.googleapis.com/auth/admin.directory.group.readonly",
   "https://www.googleapis.com/auth/admin.directory.group.member.readonly",
   "https://www.googleapis.com/auth/gmail.send",

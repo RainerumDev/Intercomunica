@@ -35,6 +35,19 @@ export function mapGoogleError(err: unknown): MappedGoogleError | null {
 
   if (!url.includes("googleapis.com") || status === undefined) return null;
 
+  if (status === 403 && url.includes("cloudidentity.googleapis.com")) {
+    const apiDisabled = message.includes("has not been used") || message.includes("is disabled");
+    return {
+      httpStatus: 403,
+      body: {
+        code: "CLOUD_IDENTITY_FORBIDDEN",
+        error: apiDisabled
+          ? "Cloud Identity API non abilitata nel progetto Google Cloud. Abilitarla dalla console (API e servizi → Libreria → Cloud Identity API) e riprovare."
+          : "L'account master non può leggere i membri del gruppo. Verificare: 1) di aver ricollegato l'account master accettando i nuovi permessi; 2) che nelle impostazioni del gruppo «Chi può visualizzare i membri» includa l'account master (es. tutta l'organizzazione).",
+      },
+    };
+  }
+
   if (status === 403 && url.includes("admin.googleapis.com")) {
     return {
       httpStatus: 403,
