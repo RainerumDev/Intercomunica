@@ -63,6 +63,7 @@ export interface AdminConfig {
   masterConnected: boolean;
   masterEmail: string | null;
   mainGroupEmail: string | null;
+  calendarNameTemplate: string;
 }
 
 export interface SyncLogEntry {
@@ -79,6 +80,7 @@ export interface SyncResult {
   deactivated: string[];
   reactivated: string[];
   calendarsCreated: string[];
+  calendarsRenamed: string[];
   eventsReinjected: number;
   orphansRemoved: number;
   errors: string[];

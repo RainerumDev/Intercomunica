@@ -18,6 +18,8 @@ model AppConfig {
   /// AES-256-GCM encrypted refresh token of the master account
   masterRefreshTokenEnc String?
   mainGroupEmail        String?
+  /// Template for teacher calendar names, e.g. "Calendario Rainerum 26/27 - {nome}"
+  calendarNameTemplate  String?
   updatedAt             DateTime @updatedAt
 }
 
@@ -37,6 +39,8 @@ model User {
   isActive       Boolean  @default(true)
   /// Google Calendar (owned by master account) dedicated to this teacher
   calendarId     String?  @unique
+  /// Last calendar summary applied on Google (rename detection)
+  calendarName   String?
   birthDate      DateTime? // WIP B
   nameDay        String?   // WIP B: onomastico, "MM-DD" or free text
   createdAt      DateTime @default(now())

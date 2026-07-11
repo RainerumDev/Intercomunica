@@ -1,13 +1,21 @@
 import { prisma } from "../db.js";
 import { listGroupMembers } from "../google/directory.js";
-import { createTeacherCalendar, listAppEvents, insertEvent, deleteEvent } from "../google/calendar.js";
+import {
+  createTeacherCalendar,
+  renameCalendar,
+  listAppEvents,
+  insertEvent,
+  deleteEvent,
+} from "../google/calendar.js";
 import { eventToCalendarPayload } from "./eventService.js";
+import { renderCalendarName } from "./calendarName.js";
 
 export interface SyncResult {
   added: string[];
   deactivated: string[];
   reactivated: string[];
   calendarsCreated: string[];
+  calendarsRenamed: string[];
   eventsReinjected: number;
   orphansRemoved: number;
   errors: string[];
@@ -26,6 +34,7 @@ export async function runFullSync(): Promise<SyncResult> {
     deactivated: [],
     reactivated: [],
     calendarsCreated: [],
+    calendarsRenamed: [],
     eventsReinjected: 0,
     orphansRemoved: 0,
     errors: [],
@@ -58,17 +67,25 @@ export async function runFullSync(): Promise<SyncResult> {
       }
     }
 
-    // --- 2. calendars for every active member ------------------------------
+    // --- 2. calendars for every active member (create missing, rename on template change)
     const active = await prisma.user.findMany({ where: { isActive: true } });
     for (const u of active) {
-      if (!u.calendarId) {
-        try {
-          const calendarId = await createTeacherCalendar(u.email, u.name ?? u.email);
-          await prisma.user.update({ where: { id: u.id }, data: { calendarId } });
+      const desiredName = renderCalendarName(cfg.calendarNameTemplate, u);
+      try {
+        if (!u.calendarId) {
+          const calendarId = await createTeacherCalendar(u.email, desiredName);
+          await prisma.user.update({
+            where: { id: u.id },
+            data: { calendarId, calendarName: desiredName },
+          });
           result.calendarsCreated.push(u.email);
-        } catch (err) {
-          result.errors.push(`calendario ${u.email}: ${(err as Error).message}`);
+        } else if (u.calendarName !== desiredName) {
+          await renameCalendar(u.calendarId, desiredName);
+          await prisma.user.update({ where: { id: u.id }, data: { calendarName: desiredName } });
+          result.calendarsRenamed.push(u.email);
         }
+      } catch (err) {
+        result.errors.push(`calendario ${u.email}: ${(err as Error).message}`);
       }
     }
 

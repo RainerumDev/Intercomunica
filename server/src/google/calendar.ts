@@ -68,6 +68,12 @@ export async function createTeacherCalendar(teacherEmail: string, displayName: s
   return calendarId;
 }
 
+/** Rename an existing teacher calendar. */
+export async function renameCalendar(calendarId: string, summary: string): Promise<void> {
+  const cal = await calendarApi();
+  await withRetry(() => cal.calendars.patch({ calendarId, requestBody: { summary } }));
+}
+
 export async function insertEvent(calendarId: string, payload: CalendarEventPayload): Promise<string> {
   const cal = await calendarApi();
   const res = await withRetry(() =>

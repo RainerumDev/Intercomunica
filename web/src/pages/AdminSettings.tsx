@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { api } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { api, ApiError } from "../api";
 import type { AdminConfig, SyncLogEntry, SyncResult } from "../types";
 
 interface GroupOption {
@@ -7,11 +7,18 @@ interface GroupOption {
   name?: string;
 }
 
+const NAME_PLACEHOLDER = "{nome}";
+const PREVIEW_TEACHER = "Mario Rossi";
+
 export default function AdminSettings() {
   const [cfg, setCfg] = useState<AdminConfig | null>(null);
   const [groups, setGroups] = useState<GroupOption[] | null>(null);
   const [selectedGroup, setSelectedGroup] = useState("");
   const [manualGroup, setManualGroup] = useState("");
+  const [groupsHint, setGroupsHint] = useState<string | null>(null);
+  const [nameTemplate, setNameTemplate] = useState("");
+  const [nameSaved, setNameSaved] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncLogs, setSyncLogs] = useState<SyncLogEntry[]>([]);
@@ -24,6 +31,7 @@ export default function AdminSettings() {
     api.get<AdminConfig>("/api/admin/config").then((c) => {
       setCfg(c);
       setSelectedGroup(c.mainGroupEmail ?? "");
+      setNameTemplate(c.calendarNameTemplate);
     });
 
   useEffect(() => {
@@ -32,11 +40,43 @@ export default function AdminSettings() {
 
   const loadGroups = async () => {
     setError(null);
+    setGroupsHint(null);
     try {
       setGroups(await api.get<GroupOption[]>("/api/admin/groups"));
     } catch (e) {
+      // no admin role on the master account: expected — steer to manual entry
+      if (e instanceof ApiError && e.code === "DIRECTORY_FORBIDDEN") {
+        setGroupsHint(
+          "Elenco non disponibile: l'account master non ha un ruolo amministratore (non è necessario). Usa l'inserimento manuale qui sotto."
+        );
+      } else {
+        setError((e as Error).message);
+      }
+    }
+  };
+
+  const saveNameTemplate = async () => {
+    setError(null);
+    setNameSaved(false);
+    try {
+      await api.post("/api/admin/calendar-name", { template: nameTemplate.trim() });
+      setNameSaved(true);
+      await loadConfig();
+    } catch (e) {
       setError((e as Error).message);
     }
+  };
+
+  const insertPlaceholder = () => {
+    const input = nameInputRef.current;
+    const pos = input?.selectionStart ?? nameTemplate.length;
+    const next = nameTemplate.slice(0, pos) + NAME_PLACEHOLDER + nameTemplate.slice(pos);
+    setNameTemplate(next);
+    setNameSaved(false);
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(pos + NAME_PLACEHOLDER.length, pos + NAME_PLACEHOLDER.length);
+    });
   };
 
   const saveGroup = async (groupEmail: string) => {
@@ -136,6 +176,10 @@ export default function AdminSettings() {
           </div>
         )}
 
+        {groupsHint && (
+          <p className="mt-2 rounded bg-amber-50 text-amber-800 px-3 py-2 text-sm">{groupsHint}</p>
+        )}
+
         {/* Fallback: manual entry — works even without Directory list privileges */}
         <div className="mt-4 border-t border-gray-100 pt-3">
           <p className="text-xs text-gray-400 mb-2">
@@ -162,9 +206,64 @@ export default function AdminSettings() {
         </div>
       </section>
 
+      {/* Nome dei calendari docente */}
+      <section className="rounded-lg bg-white border border-gray-200 p-6">
+        <h2 className="font-semibold text-gray-800 mb-2">3. Nome dei calendari</h2>
+        <p className="text-sm text-gray-500 mb-3">
+          Modello usato per il nome del calendario di ogni docente. Usa il segnaposto{" "}
+          <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs">{NAME_PLACEHOLDER}</code> per
+          inserire il nome del docente nel punto desiderato.
+        </p>
+        <div className="flex gap-2">
+          <input
+            ref={nameInputRef}
+            value={nameTemplate}
+            onChange={(e) => {
+              setNameTemplate(e.target.value);
+              setNameSaved(false);
+            }}
+            placeholder={`Calendario Rainerum 26/27 - ${NAME_PLACEHOLDER}`}
+            className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm font-mono"
+          />
+          <button
+            onClick={insertPlaceholder}
+            title="Inserisci il segnaposto del nome docente nella posizione del cursore"
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 whitespace-nowrap"
+          >
+            + Nome docente
+          </button>
+          <button
+            onClick={saveNameTemplate}
+            disabled={!nameTemplate.trim() || nameTemplate === cfg.calendarNameTemplate}
+            className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
+          >
+            Salva
+          </button>
+        </div>
+        <p className="mt-3 text-sm text-gray-600">
+          Anteprima:{" "}
+          <span className="font-medium text-gray-900">
+            {(nameTemplate.trim() || `Calendario Rainerum 26/27 - ${NAME_PLACEHOLDER}`).replaceAll(
+              NAME_PLACEHOLDER,
+              PREVIEW_TEACHER
+            )}
+          </span>
+        </p>
+        {!nameTemplate.includes(NAME_PLACEHOLDER) && nameTemplate.trim() !== "" && (
+          <p className="mt-2 rounded bg-amber-50 text-amber-800 px-3 py-2 text-sm">
+            ⚠️ Senza {NAME_PLACEHOLDER} tutti i calendari avranno lo stesso identico nome.
+          </p>
+        )}
+        {nameSaved && (
+          <p className="mt-2 rounded bg-green-50 text-green-700 px-3 py-2 text-sm">
+            ✓ Salvato. I calendari esistenti verranno rinominati alla prossima sincronizzazione.
+          </p>
+        )}
+      </section>
+
       {/* Flusso 1.3/1.4 — sync */}
       <section className="rounded-lg bg-white border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-800 mb-2">3. Sincronizzazione</h2>
+        <h2 className="font-semibold text-gray-800 mb-2">4. Sincronizzazione</h2>
         <p className="text-sm text-gray-500 mb-3">
           Importa i membri del gruppo, crea i calendari condivisi mancanti e riconcilia gli
           eventi tra database e Google Calendar.
@@ -223,6 +322,7 @@ export default function AdminSettings() {
             <p>Disattivati: {syncResult.deactivated.length}</p>
             <p>Riattivati: {syncResult.reactivated.length}</p>
             <p>Calendari creati: {syncResult.calendarsCreated.length}</p>
+            <p>Calendari rinominati: {syncResult.calendarsRenamed.length}</p>
             <p>Eventi re-iniettati: {syncResult.eventsReinjected}</p>
             <p>Eventi orfani rimossi: {syncResult.orphansRemoved}</p>
             {syncResult.errors.length > 0 && (
