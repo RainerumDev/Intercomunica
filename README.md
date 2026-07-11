@@ -31,7 +31,7 @@ Applicazione web per l'orchestrazione di Google Calendar, la gestione di sottogr
 2. Crea credenziali **OAuth client ID** (tipo *Web application*) con redirect URI:
    - `http://localhost:3000/api/auth/google/callback`
    - `http://localhost:3000/api/admin/master/callback`
-3. L'account master deve avere il privilegio di lettura dei gruppi (Directory API) nel workspace.
+3. **Privilegi Directory per l'account master** — l'API Directory richiede che l'account chiamante sia amministratore (anche delegato). In Admin Console: *Account → Ruoli amministratore → Crea nuovo ruolo* con privilegio **Admin API → Gruppi → Lettura** (opz. *Utenti → Lettura*), poi assegnarlo all'account master. Senza questo privilegio l'elenco gruppi restituisce `DIRECTORY_FORBIDDEN`; in tal caso è comunque possibile inserire manualmente l'email del gruppo nelle Impostazioni.
 
 ### 3. Configurazione
 ```bash
@@ -39,6 +39,7 @@ cp server/.env.example server/.env
 # compila GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, JWT_SECRET
 # ENCRYPTION_KEY: openssl rand -hex 32
 # ADMIN_EMAILS: email di presidenza/direzione separate da virgola
+# ALLOWED_EMAIL_DOMAIN: limita il login al dominio della scuola (consigliato)
 ```
 
 ### 4. Avvio

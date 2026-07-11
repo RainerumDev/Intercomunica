@@ -27,6 +27,11 @@ authRouter.get(
       return;
     }
     const { profile } = await exchangeCode(LOGIN_CALLBACK_PATH, code);
+    const allowedDomain = config().ALLOWED_EMAIL_DOMAIN?.toLowerCase();
+    if (allowedDomain && !profile.email.toLowerCase().endsWith(`@${allowedDomain}`)) {
+      res.redirect(`${config().WEB_URL}/login?error=domain`);
+      return;
+    }
     const user = await upsertLoginUser(profile);
     setSessionCookie(res, user);
     res.redirect(config().WEB_URL);

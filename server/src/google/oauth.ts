@@ -46,6 +46,8 @@ export function loginAuthUrl(): string {
   return oauthClient(LOGIN_CALLBACK_PATH).generateAuthUrl({
     scope: LOGIN_SCOPES,
     state: signState("login"),
+    // hint Google's account chooser to the school domain (server-side check enforces it)
+    hd: config().ALLOWED_EMAIL_DOMAIN,
   });
 }
 

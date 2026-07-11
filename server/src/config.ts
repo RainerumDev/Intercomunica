@@ -17,6 +17,8 @@ const envSchema = z.object({
   ENCRYPTION_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, "must be 64 hex chars (32 bytes)"),
   /// Comma-separated list of emails granted ADMIN role at login
   ADMIN_EMAILS: z.string().default(""),
+  /// If set (e.g. "rainerum.it"), only accounts of this domain can log in
+  ALLOWED_EMAIL_DOMAIN: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from "express";
 import { config } from "./config.js";
 import { sessionMiddleware } from "./auth/session.js";
 import { MasterNotConnectedError } from "./google/master.js";
+import { mapGoogleError } from "./google/errors.js";
 import { authRouter } from "./routes/auth.js";
 import { adminRouter } from "./routes/admin.js";
 import { subgroupsRouter } from "./routes/subgroups.js";
@@ -38,6 +39,12 @@ export function createApp(): express.Express {
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof MasterNotConnectedError) {
       res.status(409).json({ error: err.message, code: "MASTER_NOT_CONNECTED" });
+      return;
+    }
+    const googleError = mapGoogleError(err);
+    if (googleError) {
+      console.error(`Google API error → ${googleError.body.code}:`, err.message);
+      res.status(googleError.httpStatus).json(googleError.body);
       return;
     }
     console.error(err);

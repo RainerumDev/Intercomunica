@@ -10,7 +10,9 @@ export default function Login() {
         <p className="text-gray-500 mt-1 mb-8">Rainerum — comunicazione interna docenti</p>
         {error && (
           <p className="mb-4 rounded bg-red-50 text-red-700 px-3 py-2 text-sm">
-            Accesso non riuscito. Riprova.
+            {error === "domain"
+              ? "Accesso consentito solo con l'account istituzionale della scuola."
+              : "Accesso non riuscito. Riprova."}
           </p>
         )}
         <a

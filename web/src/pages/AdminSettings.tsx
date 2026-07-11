@@ -11,6 +11,7 @@ export default function AdminSettings() {
   const [cfg, setCfg] = useState<AdminConfig | null>(null);
   const [groups, setGroups] = useState<GroupOption[] | null>(null);
   const [selectedGroup, setSelectedGroup] = useState("");
+  const [manualGroup, setManualGroup] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,10 +35,11 @@ export default function AdminSettings() {
     }
   };
 
-  const saveGroup = async () => {
+  const saveGroup = async (groupEmail: string) => {
     setError(null);
     try {
-      await api.post("/api/admin/group", { groupEmail: selectedGroup });
+      await api.post("/api/admin/group", { groupEmail });
+      setManualGroup("");
       await loadConfig();
     } catch (e) {
       setError((e as Error).message);
@@ -120,7 +122,7 @@ export default function AdminSettings() {
               ))}
             </select>
             <button
-              onClick={saveGroup}
+              onClick={() => saveGroup(selectedGroup)}
               disabled={!selectedGroup}
               className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
             >
@@ -128,6 +130,31 @@ export default function AdminSettings() {
             </button>
           </div>
         )}
+
+        {/* Fallback: manual entry — works even without Directory list privileges */}
+        <div className="mt-4 border-t border-gray-100 pt-3">
+          <p className="text-xs text-gray-400 mb-2">
+            In alternativa, inserisci direttamente l'indirizzo del gruppo:
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="email"
+              value={manualGroup}
+              onChange={(e) => setManualGroup(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && manualGroup.includes("@") && saveGroup(manualGroup.trim())}
+              placeholder="docenti@rainerum.it"
+              disabled={!cfg.masterConnected}
+              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm disabled:opacity-50"
+            />
+            <button
+              onClick={() => saveGroup(manualGroup.trim())}
+              disabled={!cfg.masterConnected || !manualGroup.includes("@")}
+              className="rounded-md border border-blue-700 text-blue-700 px-4 py-2 text-sm font-medium hover:bg-blue-50 disabled:opacity-50"
+            >
+              Salva
+            </button>
+          </div>
+        </div>
       </section>
 
       {/* Flusso 1.3/1.4 — sync */}
