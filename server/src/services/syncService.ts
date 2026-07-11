@@ -45,7 +45,12 @@ export async function runFullSync(): Promise<SyncResult> {
     if (!cfg?.mainGroupEmail) throw new Error("Gruppo Google principale non configurato");
 
     // --- 1. membership alignment -------------------------------------------
-    const members = await listGroupMembers(cfg.mainGroupEmail);
+    // The master account orchestrates the calendars: if it appears among the
+    // group members, never treat it as a teacher (no User, no calendar).
+    const masterEmail = cfg.masterEmail?.toLowerCase();
+    const members = (await listGroupMembers(cfg.mainGroupEmail)).filter(
+      (m) => m.email !== masterEmail
+    );
     const memberEmails = new Set(members.map((m) => m.email));
     const existing = await prisma.user.findMany();
     const existingByEmail = new Map(existing.map((u) => [u.email, u]));
