@@ -1,4 +1,7 @@
-FROM node:22-alpine AS dependencies
+FROM node:22-bookworm-slim AS dependencies
+RUN apt-get update \
+  && apt-get install --no-install-recommends -y openssl \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY server/package.json server/package.json
@@ -10,10 +13,13 @@ COPY server server
 COPY web web
 RUN npm run prisma:generate --workspace server && npm run build
 
-FROM dependencies AS production-dependencies
+FROM build AS production-dependencies
 RUN npm prune --omit=dev
 
-FROM node:22-alpine AS runtime
+FROM node:22-bookworm-slim AS runtime
+RUN apt-get update \
+  && apt-get install --no-install-recommends -y openssl \
+  && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=production-dependencies /app/node_modules node_modules
