@@ -1,0 +1,12 @@
+.git
+.claude
+node_modules
+server/node_modules
+web/node_modules
+server/dist
+web/dist
+server/.env
+.env
+.env.*
+!.env.production.example
+npm-debug.log*

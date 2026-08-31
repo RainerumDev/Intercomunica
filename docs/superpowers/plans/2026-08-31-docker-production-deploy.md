@@ -6,7 +6,7 @@
 
 **Architecture:** A multi-stage Node.js 22 image builds both workspaces and runs Express as an unprivileged user. Docker Compose connects that container to an internal PostgreSQL 16 service, applies versioned Prisma migrations on startup, publishes only the application on VPS loopback, and exposes database-aware healthchecks.
 
-**Tech Stack:** Docker Engine, Docker Compose v2, Node.js 22 Alpine, npm workspaces, Express, React/Vite, Prisma 5, PostgreSQL 16 Alpine
+**Tech Stack:** Docker Engine, Docker Compose v2, Node.js 22 Debian slim, npm workspaces, Express, React/Vite, Prisma 5, PostgreSQL 16 Alpine
 
 **Spec:** `docs/superpowers/specs/2026-08-31-docker-production-deploy-design.md`
 
@@ -17,8 +17,11 @@
 - Run the application process as the unprivileged `node` user.
 - Use `prisma migrate deploy` for production schema changes; never run `prisma db push` in the production container.
 - Keep all production credentials out of tracked files.
+- Generate `POSTGRES_PASSWORD` with `openssl rand -hex 32`; Compose interpolates it directly into `DATABASE_URL`, so arbitrary punctuation passwords are unsupported.
 - Preserve the existing Node.js 22, PostgreSQL 16, Express, Prisma, and Vite stack.
 - Do not configure Nginx Proxy Manager, DNS, firewall rules, or automated off-site backups in this repository.
+
+The application image intentionally uses Debian slim rather than Alpine: Prisma is supported on its glibc base and OpenSSL is installed reliably with `apt`. PostgreSQL remains on its Alpine image; the small Node image-size trade-off avoids Alpine-specific Prisma/OpenSSL compatibility handling.
 
 ---
 
@@ -189,7 +192,10 @@ exec node server/dist/index.js
 Use four stages:
 
 ```dockerfile
-FROM node:22-alpine AS dependencies
+FROM node:22-bookworm-slim AS dependencies
+RUN apt-get update \
+  && apt-get install --no-install-recommends -y openssl \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY server/package.json server/package.json
@@ -204,7 +210,10 @@ RUN npm run prisma:generate --workspace server && npm run build
 FROM dependencies AS production-dependencies
 RUN npm prune --omit=dev
 
-FROM node:22-alpine AS runtime
+FROM node:22-bookworm-slim AS runtime
+RUN apt-get update \
+  && apt-get install --no-install-recommends -y openssl \
+  && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=production-dependencies /app/node_modules node_modules
@@ -264,6 +273,7 @@ git commit -m "feat(docker): add production application image"
 
 **Files:**
 - Modify: `docker-compose.yml`
+- Create: `docker-compose.dev.yml`
 - Create: `.env.production.example`
 - Modify: `.gitignore`
 
@@ -287,7 +297,8 @@ PUBLIC_URL=https://intercomunica.example.it
 
 POSTGRES_DB=intercomunica
 POSTGRES_USER=intercomunica
-POSTGRES_PASSWORD=replace-with-a-long-random-password
+# Generate with: openssl rand -hex 32
+POSTGRES_PASSWORD=9f7c2a4e8b1d6f03c5a9e2b7d4f8a1c6e3b0d9f5a7c2e8b4d1f6a3c9e0b5d7f2
 
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
@@ -302,7 +313,7 @@ Add `.env.production` to `.gitignore` while retaining the example file.
 
 - [ ] **Step 3: Replace Compose with the two-service production stack**
 
-Define `db` with PostgreSQL 16 Alpine, no `ports`, a named volume, `backend` network, `pg_isready` healthcheck, and restart policy. Define `app` with `build: .`, `depends_on.db.condition: service_healthy`, all application environment values, port binding `127.0.0.1:${APP_PORT:-3000}:3000`, app healthcheck using Node's built-in `fetch`, and restart policy. Set `DATABASE_URL` to:
+Define `db` with PostgreSQL 16 Alpine, no `ports`, a named volume, `backend` network, `pg_isready` healthcheck, and restart policy. Define `app` with `build: .`, `depends_on.db.condition: service_healthy`, all application environment values, port binding `127.0.0.1:${APP_PORT:-3000}:3000`, app healthcheck using Node's built-in `fetch`, and restart policy. Attach `app` to the mandatory pre-existing external `PROXY_NETWORK` with the unique stable alias `intercomunica`. Create `docker-compose.dev.yml` separately with only the local PostgreSQL service and its port mapping. Set `DATABASE_URL` to:
 
 ```yaml
 DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
@@ -511,3 +522,8 @@ List only values the operator must supply: `PUBLIC_URL`, `POSTGRES_PASSWORD`, Go
 - [ ] **Step 3: Stop after readiness proof**
 
 Do not deploy to the real VPS, edit DNS, configure Nginx Proxy Manager, or restore production data without a separate explicit request.
+
+## Deferred follow-ups
+
+- [ ] Add a route-level integration test for `GET /api/health`; it is explicitly acceptable to defer because the health checker unit tests cover this release, and no new dependency is needed.
+- [ ] Review `npm audit` findings and select only justified, compatible remediation; do not blindly update dependencies.

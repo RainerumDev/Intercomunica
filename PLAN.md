@@ -55,12 +55,25 @@
 - [ ] Email: preview + rich text editor; per-user send quota guard
 - [ ] Timetable import (WIP C): actual conversion to recurring events
 
+### Deploy produzione Docker (2026-08-31)
+- [x] Health check applicativo con verifica database
+- [x] Migrazione Prisma iniziale versionata
+- [x] Immagine applicativa di produzione non-root
+- [x] Stack Compose con app su loopback e PostgreSQL interno
+- [x] Verifica fresh-stack e riavvio idempotente
+- [x] Guida operativa per deploy, aggiornamenti, backup, ripristino e rollback
+
+### Follow-up deploy Docker (2026-08-31)
+- [ ] Aggiungere un test d'integrazione a livello route per `GET /api/health`; il rinvio è esplicitamente accettabile perché i test unitari del checker coprono questa release e non serve una nuova dipendenza.
+- [ ] Riesaminare i risultati di `npm audit` e applicare solo correzioni motivate e compatibili; non aggiornare le dipendenze alla cieca.
+
 ## Verification commands
 - `npm run typecheck --workspaces`
 - `npm test --workspace server`
 - `npm run build --workspaces`
 
 ## Iteration log
+- **Iter 6 (2026-08-31)**: deploy Docker di produzione completato: immagine Node 22 con `prisma migrate deploy`, Compose con `app` pubblicata solo su `127.0.0.1:3000` e PostgreSQL interno, verifica fresh-stack/idempotenza, e guida operativa con configurazione Nginx Proxy Manager, redirect OAuth HTTPS, backup e ripristino protetto.
 - **Iter 5 (2026-07-11)**: calendar-name template feature (user request). AppConfig.calendarNameTemplate + User.calendarName (rename detection, no extra Google calls when unchanged); renderCalendarName with {nome}/{email} placeholders; POST /api/admin/calendar-name; sync renames existing calendars on template change (calendarsRenamed in result). Settings UI: template input + cursor-aware "+ Nome docente" button + live preview + same-name warning. DIRECTORY_FORBIDDEN on "Carica gruppi" now shows amber hint steering to manual entry instead of red error. db push applied to dev DB. 34 tests green.
 - **Iter 4 (2026-07-11)**: hardening pass — google/retry.ts (withRetry: exp backoff + jitter, injectable sleep; applied to all Calendar writes/list + Gmail send), ADMIN-session guard on /api/admin/master/callback, production static serving of web/dist with SPA fallback (smoke-tested: /, /directory, /api/health), sync-history table in Impostazioni. 29 tests green.
 - **Iter 3 (2026-07-11)**: Option B implemented — member listing via Cloud Identity API (no admin role needed, group visibility suffices). New scope cloud-identity.groups.readonly in MASTER_SCOPES → user must RECONNECT master account. CLOUD_IDENTITY_FORBIDDEN error mapping (API disabled vs member visibility). 21 tests green. User actions required: enable Cloud Identity API in GCP project, reconnect master, save group email manually, run sync.

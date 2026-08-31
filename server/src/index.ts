@@ -17,6 +17,7 @@ import { tagsRouter } from "./routes/tags.js";
 import { emailRouter } from "./routes/email.js";
 import { bachecaRouter } from "./routes/bacheca.js";
 import { wipRouter } from "./routes/wip.js";
+import { checkDatabase } from "./health.js";
 
 export function createApp(): express.Express {
   const app = express();
@@ -24,8 +25,13 @@ export function createApp(): express.Express {
   app.use(cookieParser());
   app.use(sessionMiddleware);
 
-  app.get("/api/health", (_req, res) => {
-    res.json({ ok: true, app: "intercomunica" });
+  app.get("/api/health", async (_req, res) => {
+    const database = await checkDatabase();
+    if (!database) {
+      res.status(503).json({ ok: false, app: "intercomunica", database: "down" });
+      return;
+    }
+    res.json({ ok: true, app: "intercomunica", database: "up" });
   });
 
   app.use("/api/auth", authRouter);
