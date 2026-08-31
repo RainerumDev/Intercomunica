@@ -17,6 +17,8 @@ import { tagsRouter } from "./routes/tags.js";
 import { emailRouter } from "./routes/email.js";
 import { bachecaRouter } from "./routes/bacheca.js";
 import { wipRouter } from "./routes/wip.js";
+import { googleCalendarRouter } from "./routes/googleCalendar.js";
+import { startGeneralCalendarScheduler } from "./services/generalCalendarSync.js";
 import { checkDatabase } from "./health.js";
 
 export function createApp(): express.Express {
@@ -35,6 +37,7 @@ export function createApp(): express.Express {
   });
 
   app.use("/api/auth", authRouter);
+  app.use("/api/google-calendar", googleCalendarRouter);
   app.use("/api/admin", adminRouter);
   app.use("/api/subgroups", subgroupsRouter);
   app.use("/api/users", usersRouter);
@@ -80,7 +83,14 @@ const isMain = process.argv[1]?.endsWith("index.ts") || process.argv[1]?.endsWit
 if (isMain) {
   const app = createApp();
   const port = config().PORT;
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     console.log(`Intercomunica server → http://localhost:${port}`);
   });
+  const scheduler = startGeneralCalendarScheduler();
+  const shutdown = () => {
+    clearInterval(scheduler);
+    server.close();
+  };
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
 }

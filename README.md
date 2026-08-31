@@ -15,8 +15,9 @@ Applicazione web per l'orchestrazione di Google Calendar, la gestione di sottogr
 
 - L'app collega un **account master** (es. `comunicazione@rainerum.it`) via OAuth offline; il refresh token è cifrato (AES-256-GCM) nel database.
 - Per ogni docente del Google Group principale (es. `docenti@rainerum.it`) l'app crea un **calendario dedicato** nell'account master e lo condivide in **sola lettura** con il docente. L'app è l'unico orchestratore con permessi di scrittura.
-- Gli eventi creati dalla presidenza vengono **iniettati** nei calendari dei docenti appartenenti ai sottogruppi selezionati, con `extendedProperties.private` che trasporta i metadati (ID evento app, sottogruppi, TAG).
-- Gli eventi con flag **«Visibile a tutti»** non vengono iniettati nei calendari: vivono solo nel database e compaiono in bacheca per tutti.
+- Tutti gli eventi vengono salvati nel **calendario generale** configurato. Le modifiche effettuate direttamente su Google vengono importate automaticamente e propagate dall'app.
+- Gli eventi creati dall'app vengono **iniettati** nei calendari dei docenti appartenenti ai sottogruppi selezionati, con `extendedProperties.private` che trasporta i metadati (ID evento app, sottogruppi, TAG).
+- Gli eventi **«Visibile a tutti»** vengono copiati nei calendari di tutti i docenti; gli eventi **«Solo bacheca»** restano esclusivamente nel calendario generale e sulla bacheca.
 - La **bacheca** mostra, per ogni TAG, i primi 3 impegni imminenti visibili al docente (eventi dei suoi sottogruppi + eventi globali).
 - Le **email** ai sottogruppi partono dall'account master via Gmail API, con `Reply-To` impostato al docente che scrive; selettore A:/CCN: (default A:).
 
@@ -91,6 +92,14 @@ Configura Nginx Proxy Manager con schema `http`, host di inoltro `intercomunica`
 ${PUBLIC_URL}/api/auth/google/callback
 ${PUBLIC_URL}/api/admin/master/callback
 ```
+
+Il calendario generale usa notifiche push Google sull'endpoint pubblico
+`${PUBLIC_URL}/api/google-calendar/webhook`: `PUBLIC_URL` deve quindi essere l'URL HTTPS effettivamente
+raggiungibile da Internet, senza path finale. Non occorre configurare una route separata in Nginx Proxy
+Manager: lo stesso proxy dell'app inoltra anche il webhook. Il server rinnova automaticamente il canale,
+esegue un controllo incrementale ogni 15 minuti e limita la prima importazione agli ultimi 30 giorni più
+tutti gli eventi futuri. Dopo il deploy, collega il calendario dalla pagina **Impostazioni** usando il suo ID
+`@group.calendar.google.com`; l'account master deve avere accesso in scrittura a quel calendario.
 
 ### Aggiornamenti e log
 

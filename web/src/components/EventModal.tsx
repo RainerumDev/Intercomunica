@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import type { AppEvent, Subgroup, Tag } from "../types";
+import { asAllDayRange, asTimedValue, commitPendingTag, toEventIso } from "./eventForm";
 
 export interface EventDraft {
   id?: string;
@@ -26,16 +27,30 @@ interface Props {
   onClose: () => void;
 }
 
-function toIso(local: string): string {
-  return new Date(local).toISOString();
-}
-
 export default function EventModal({ draft, subgroups, knownTags, readOnly, onSaved, onDeleted, onClose }: Props) {
   const [form, setForm] = useState<EventDraft>(draft);
   const [tagInput, setTagInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isEdit = Boolean(draft.id);
+  const subgroupFolders = useMemo(() => {
+    const grouped = new Map<string, Subgroup[]>();
+    for (const subgroup of subgroups) {
+      const folder = subgroup.folder?.trim() || "Altri";
+      grouped.set(folder, [...(grouped.get(folder) ?? []), subgroup]);
+    }
+    return [...grouped.entries()]
+      .sort(([a], [b]) => a.localeCompare(b, "it"))
+      .map(([folder, entries]) => [folder, entries.sort((a, b) => a.name.localeCompare(b.name, "it"))] as const);
+  }, [subgroups]);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [busy, onClose]);
 
   const set = <K extends keyof EventDraft>(key: K, value: EventDraft[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -49,25 +64,25 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
     );
 
   const addTag = (name: string) => {
-    const clean = name.trim().toUpperCase();
-    if (clean && !form.tagNames.includes(clean)) set("tagNames", [...form.tagNames, clean]);
+    set("tagNames", commitPendingTag(form.tagNames, name));
     setTagInput("");
   };
 
   const save = async () => {
     setBusy(true);
     setError(null);
+    const tagNames = commitPendingTag(form.tagNames, tagInput);
     const payload = {
       title: form.title.trim(),
       description: form.description.trim() || null,
       location: form.location.trim() || null,
-      startsAt: toIso(form.startsAt),
-      endsAt: toIso(form.endsAt),
+      startsAt: toEventIso(form.startsAt, form.allDay),
+      endsAt: toEventIso(form.endsAt, form.allDay),
       allDay: form.allDay,
       isGlobal: form.isGlobal,
       bachecaOnly: form.bachecaOnly,
       subgroupIds: form.isGlobal ? [] : form.subgroupIds,
-      tagNames: form.tagNames,
+      tagNames,
     };
     try {
       if (isEdit) await api.put<AppEvent>(`/api/events/${draft.id}`, payload);
@@ -126,7 +141,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
             <label className="text-sm text-gray-600">
               Inizio
               <input
-                type="datetime-local"
+                type={form.allDay ? "date" : "datetime-local"}
                 value={form.startsAt}
                 onChange={(e) => set("startsAt", e.target.value)}
                 disabled={readOnly}
@@ -136,7 +151,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
             <label className="text-sm text-gray-600">
               Fine
               <input
-                type="datetime-local"
+                type={form.allDay ? "date" : "datetime-local"}
                 value={form.endsAt}
                 onChange={(e) => set("endsAt", e.target.value)}
                 disabled={readOnly}
@@ -151,7 +166,18 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
                 type="checkbox"
                 checked={form.allDay}
                 disabled={readOnly}
-                onChange={(e) => set("allDay", e.target.checked)}
+                onChange={(e) => {
+                  const allDay = e.target.checked;
+                  setForm((current) => {
+                    const range = allDay
+                      ? asAllDayRange(current.startsAt, current.endsAt)
+                      : {
+                          startsAt: asTimedValue(current.startsAt, "08:00"),
+                          endsAt: asTimedValue(current.endsAt, "09:00"),
+                        };
+                    return { ...current, allDay, ...range };
+                  });
+                }}
               />
               Tutto il giorno
             </label>
@@ -164,7 +190,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
               />
               🌍 Visibile a tutti
             </label>
-            <label className="flex items-center gap-2 text-sm text-gray-700" title="Se attivo, l'evento non verrà inserito in alcun calendario Google">
+            <label className="flex items-center gap-2 text-sm text-gray-700" title="Se attivo, l'evento resta sulla bacheca e nel calendario generale, senza copie personali">
               <input
                 type="checkbox"
                 checked={form.bachecaOnly}
@@ -196,26 +222,32 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
             <p className="text-sm font-medium text-gray-700 mb-1.5">
               Sottogruppi destinatari {form.isGlobal && <span className="text-gray-400">(ignorati per eventi visibili a tutti)</span>}
             </p>
-            <div className="flex flex-wrap gap-1.5">
-              {subgroups.map((s) => {
-                const on = form.subgroupIds.includes(s.id);
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => {
-                      if (!readOnly) toggleSubgroup(s.id);
-                    }}
-                    disabled={readOnly}
-                    className={`rounded-full px-3 py-1 text-xs font-medium border ${
-                      on
-                        ? "bg-blue-100 border-blue-300 text-blue-800"
-                        : "bg-white border-gray-200 text-gray-500 hover:border-blue-300"
-                    } ${readOnly && !on ? "opacity-50" : ""}`}
-                  >
-                    {s.name}
-                  </button>
-                );
-              })}
+            <div className="space-y-3">
+              {subgroupFolders.map(([folder, entries]) => (
+                <div key={folder} className="rounded-md border border-gray-200 p-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{folder}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {entries.map((s) => {
+                      const on = form.subgroupIds.includes(s.id);
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => !readOnly && toggleSubgroup(s.id)}
+                          disabled={readOnly}
+                          className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                            on
+                              ? "bg-blue-100 border-blue-300 text-blue-800"
+                              : "bg-white border-gray-200 text-gray-500 hover:border-blue-300"
+                          } ${readOnly && !on ? "opacity-50" : ""}`}
+                        >
+                          {s.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
               {subgroups.length === 0 && (
                 <p className="text-sm text-gray-400">Nessun sottogruppo definito.</p>
               )}
@@ -248,6 +280,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
                 <input
                   value={tagInput}
                   onChange={(e) => setTagInput(e.target.value)}
+                  onBlur={() => addTag(tagInput)}
                   onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();

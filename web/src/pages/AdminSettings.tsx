@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
-import type { AdminConfig, SyncLogEntry, SyncResult } from "../types";
+import type { AdminConfig, GeneralCalendarSyncResult, SyncLogEntry, SyncResult } from "../types";
 
 interface GroupOption {
   email: string;
@@ -9,6 +9,7 @@ interface GroupOption {
 
 const NAME_PLACEHOLDER = "{nome}";
 const PREVIEW_TEACHER = "Mario Rossi";
+const GENERAL_CALENDAR_EXAMPLE = "c_b4c23e467aa6ec43d9d5da28d534233058f7c18cbc8c0341333535c72eb87c29@group.calendar.google.com";
 
 export default function AdminSettings() {
   const [cfg, setCfg] = useState<AdminConfig | null>(null);
@@ -20,6 +21,10 @@ export default function AdminSettings() {
   const [nameSaved, setNameSaved] = useState(false);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [generalCalendarId, setGeneralCalendarId] = useState("");
+  const [savingGeneralCalendar, setSavingGeneralCalendar] = useState(false);
+  const [syncingGeneralCalendar, setSyncingGeneralCalendar] = useState(false);
+  const [generalSyncResult, setGeneralSyncResult] = useState<GeneralCalendarSyncResult | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncLogs, setSyncLogs] = useState<SyncLogEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +37,7 @@ export default function AdminSettings() {
       setCfg(c);
       setSelectedGroup(c.mainGroupEmail ?? "");
       setNameTemplate(c.calendarNameTemplate);
+      setGeneralCalendarId(c.generalCalendarId ?? "");
     });
 
   useEffect(() => {
@@ -101,6 +107,36 @@ export default function AdminSettings() {
     } finally {
       setSyncing(false);
       loadLogs().catch(() => {});
+    }
+  };
+
+  const saveGeneralCalendar = async () => {
+    setSavingGeneralCalendar(true);
+    setGeneralSyncResult(null);
+    setError(null);
+    try {
+      await api.post("/api/admin/general-calendar", { calendarId: generalCalendarId.trim() });
+      await loadConfig();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSavingGeneralCalendar(false);
+    }
+  };
+
+  const syncGeneralCalendar = async () => {
+    setSyncingGeneralCalendar(true);
+    setGeneralSyncResult(null);
+    setError(null);
+    try {
+      setGeneralSyncResult(
+        await api.post<GeneralCalendarSyncResult>("/api/admin/general-calendar/sync")
+      );
+      await loadConfig();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSyncingGeneralCalendar(false);
     }
   };
 
@@ -261,9 +297,56 @@ export default function AdminSettings() {
         )}
       </section>
 
+      <section className="rounded-lg bg-white border border-gray-200 p-6">
+        <h2 className="font-semibold text-gray-800 mb-2">4. Calendario generale</h2>
+        <p className="text-sm text-gray-500 mb-3">
+          Tutti gli eventi vengono salvati qui. Gli eventi creati direttamente su Google vengono
+          importati come visibili a tutti; la prima importazione considera gli ultimi 30 giorni e il futuro.
+        </p>
+        <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="general-calendar-id">
+          ID calendario Google
+        </label>
+        <div className="flex gap-2">
+          <input
+            id="general-calendar-id"
+            value={generalCalendarId}
+            onChange={(event) => setGeneralCalendarId(event.target.value)}
+            placeholder={GENERAL_CALENDAR_EXAMPLE}
+            className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm font-mono"
+          />
+          <button
+            onClick={saveGeneralCalendar}
+            disabled={savingGeneralCalendar || !generalCalendarId.trim() || generalCalendarId.trim() === cfg.generalCalendarId}
+            className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
+          >
+            {savingGeneralCalendar ? "Collegamento…" : "Salva e collega"}
+          </button>
+        </div>
+        {cfg.generalCalendarId && (
+          <div className="mt-4 rounded-md bg-gray-50 border border-gray-200 p-3 text-sm text-gray-600 space-y-1">
+            <p>✓ Calendario collegato</p>
+            <p>Ultima sincronizzazione: {cfg.generalCalendarLastSyncAt ? new Date(cfg.generalCalendarLastSyncAt).toLocaleString("it-IT") : "mai"}</p>
+            <p>Webhook valido fino a: {cfg.generalCalendarWatchExpiresAt ? new Date(cfg.generalCalendarWatchExpiresAt).toLocaleString("it-IT") : "non attivo"}</p>
+            {cfg.generalCalendarLastError && <p className="text-red-700">Ultimo errore: {cfg.generalCalendarLastError}</p>}
+            <button
+              onClick={syncGeneralCalendar}
+              disabled={syncingGeneralCalendar}
+              className="mt-2 rounded-md border border-green-700 text-green-700 px-3 py-1.5 text-sm font-medium hover:bg-green-50 disabled:opacity-50"
+            >
+              {syncingGeneralCalendar ? "Sincronizzazione…" : "Sincronizza calendario generale"}
+            </button>
+            {generalSyncResult && (
+              <p className="text-green-700">
+                Importati {generalSyncResult.imported}, aggiornati {generalSyncResult.updated}, eliminati {generalSyncResult.deleted}.
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+
       {/* Flusso 1.3/1.4 — sync */}
       <section className="rounded-lg bg-white border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-800 mb-2">4. Sincronizzazione</h2>
+        <h2 className="font-semibold text-gray-800 mb-2">5. Sincronizzazione docenti</h2>
         <p className="text-sm text-gray-500 mb-3">
           Importa i membri del gruppo, crea i calendari condivisi mancanti e riconcilia gli
           eventi tra database e Google Calendar.

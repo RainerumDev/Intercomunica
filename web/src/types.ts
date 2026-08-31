@@ -67,6 +67,16 @@ export interface AdminConfig {
   masterEmail: string | null;
   mainGroupEmail: string | null;
   calendarNameTemplate: string;
+  generalCalendarId: string | null;
+  generalCalendarLastSyncAt: string | null;
+  generalCalendarLastError: string | null;
+  generalCalendarWatchExpiresAt: string | null;
+}
+
+export interface GeneralCalendarSyncResult {
+  imported: number;
+  updated: number;
+  deleted: number;
 }
 
 export interface SyncLogEntry {

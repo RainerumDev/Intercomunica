@@ -1,5 +1,6 @@
 import { calendarApi } from "./master.js";
 import { withRetry } from "./retry.js";
+import type { calendar_v3 } from "googleapis";
 
 export const EXT_PROP_APP = "intercomunica"; // marker: event managed by this app
 export const EXT_PROP_EVENT_ID = "intercomunicaEventId";
@@ -16,6 +17,24 @@ export interface CalendarEventPayload {
   appEventId: string;
   subgroupIds: string[];
   tagNames: string[];
+}
+
+export interface ImportedCalendarEvent {
+  googleEventId: string;
+  occurrenceKey?: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  startsAt: Date;
+  endsAt: Date;
+  allDay: boolean;
+  appEventId?: string;
+  tagNames: string[];
+}
+
+export interface CalendarChanges {
+  items: calendar_v3.Schema$Event[];
+  nextSyncToken: string;
 }
 
 export function toGoogleEvent(p: CalendarEventPayload) {
@@ -39,6 +58,34 @@ export function toGoogleEvent(p: CalendarEventPayload) {
         [EXT_PROP_TAGS]: p.tagNames.join(","),
       },
     },
+  };
+}
+
+export function fromGoogleEvent(event: calendar_v3.Schema$Event): ImportedCalendarEvent | null {
+  if (event.status === "cancelled" || !event.id) return null;
+  const allDay = Boolean(event.start?.date);
+  const startValue = event.start?.date ?? event.start?.dateTime;
+  const endValue = event.end?.date ?? event.end?.dateTime;
+  if (!startValue || !endValue) return null;
+  const privateProps = event.extendedProperties?.private;
+  const originalStart = event.originalStartTime?.dateTime ?? event.originalStartTime?.date;
+  return {
+    googleEventId: event.id,
+    occurrenceKey:
+      event.recurringEventId && originalStart
+        ? `${event.recurringEventId}:${originalStart}`
+        : undefined,
+    title: event.summary?.trim() || "Evento senza titolo",
+    description: event.description ?? null,
+    location: event.location ?? null,
+    startsAt: new Date(allDay ? `${startValue}T00:00:00.000Z` : startValue),
+    endsAt: new Date(allDay ? `${endValue}T00:00:00.000Z` : endValue),
+    allDay,
+    appEventId: privateProps?.[EXT_PROP_EVENT_ID],
+    tagNames: (privateProps?.[EXT_PROP_TAGS] ?? "")
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean),
   };
 }
 
@@ -102,6 +149,63 @@ export async function deleteEvent(calendarId: string, googleEventId: string): Pr
     // already gone → fine (reconciliation-friendly)
     const code = (err as { code?: number }).code;
     if (code !== 404 && code !== 410) throw err;
+  }
+}
+
+export async function listCalendarChanges(
+  calendarId: string,
+  options: { syncToken?: string; timeMin?: Date }
+): Promise<CalendarChanges> {
+  const cal = await calendarApi();
+  const items: calendar_v3.Schema$Event[] = [];
+  let pageToken: string | undefined;
+  let nextSyncToken: string | undefined;
+  do {
+    const res = await withRetry(() =>
+      cal.events.list({
+        calendarId,
+        pageToken,
+        syncToken: options.syncToken,
+        timeMin: options.syncToken ? undefined : options.timeMin?.toISOString(),
+        singleEvents: true,
+        showDeleted: true,
+        maxResults: 2500,
+      })
+    );
+    items.push(...(res.data.items ?? []));
+    pageToken = res.data.nextPageToken ?? undefined;
+    nextSyncToken = res.data.nextSyncToken ?? nextSyncToken;
+  } while (pageToken);
+  if (!nextSyncToken) throw new Error("Google non ha restituito il token di sincronizzazione");
+  return { items, nextSyncToken };
+}
+
+export async function watchCalendar(
+  calendarId: string,
+  channelId: string,
+  channelToken: string,
+  address: string
+): Promise<{ resourceId: string; expiration: Date }> {
+  const cal = await calendarApi();
+  const res = await withRetry(() =>
+    cal.events.watch({
+      calendarId,
+      requestBody: { id: channelId, type: "web_hook", address, token: channelToken },
+    })
+  );
+  if (!res.data.resourceId || !res.data.expiration) {
+    throw new Error("Google non ha restituito i dati del canale webhook");
+  }
+  return { resourceId: res.data.resourceId, expiration: new Date(Number(res.data.expiration)) };
+}
+
+export async function stopCalendarWatch(channelId: string, resourceId: string): Promise<void> {
+  const cal = await calendarApi();
+  try {
+    await withRetry(() => cal.channels.stop({ requestBody: { id: channelId, resourceId } }));
+  } catch (err) {
+    const code = (err as { code?: number }).code;
+    if (code !== 404) throw err;
   }
 }
 

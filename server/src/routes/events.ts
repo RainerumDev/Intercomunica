@@ -21,6 +21,9 @@ const eventSchema = z
     tagNames: z.array(z.string().trim().min(1).max(60)).default([]),
   })
   .refine((e) => e.endsAt >= e.startsAt, { message: "endsAt precedente a startsAt" })
+  .refine((e) => !e.allDay || e.endsAt > e.startsAt, {
+    message: "La data di fine di un evento giornaliero deve essere successiva all'inizio",
+  })
   .refine((e) => e.isGlobal || e.bachecaOnly || e.subgroupIds.length > 0, {
     message: "Selezionare almeno un sottogruppo (o attivare 'Visibile a tutti' / 'Solo bacheca')",
   });

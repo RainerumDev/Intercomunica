@@ -25,6 +25,10 @@ type EventWithRelations = Event & {
   subgroups: EventSubgroup[];
 };
 
+interface EventOperationOptions {
+  skipGeneral?: boolean;
+}
+
 /** Build the Google Calendar payload for a DB event (used by create/update/reconcile). */
 export function eventToCalendarPayload(event: EventWithRelations): CalendarEventPayload {
   return {
@@ -74,9 +78,14 @@ async function loadEvent(eventId: string): Promise<EventWithRelations> {
 
 /**
  * Flusso 3 — create event.
- * Global events: DB only (bacheca). Standard events: injected into every target teacher calendar.
+ * Every event is copied to the general calendar. Non-bacheca-only events are also injected
+ * into every target teacher calendar.
  */
-export async function createEvent(input: EventInput, createdById?: string): Promise<EventWithRelations> {
+export async function createEvent(
+  input: EventInput,
+  createdById?: string,
+  options: EventOperationOptions = {}
+): Promise<EventWithRelations> {
   const tagIds = await ensureTags(input.tagNames);
   const event = await prisma.event.create({
     data: {
@@ -94,6 +103,7 @@ export async function createEvent(input: EventInput, createdById?: string): Prom
     },
   });
 
+  if (!options.skipGeneral) await ensureGeneralCopy(event.id);
   if (!input.bachecaOnly) {
     await injectForTargets(event.id);
   }
@@ -101,7 +111,7 @@ export async function createEvent(input: EventInput, createdById?: string): Prom
 }
 
 /** Insert the event into every target calendar that doesn't have it yet. */
-async function injectForTargets(eventId: string): Promise<void> {
+export async function injectForTargets(eventId: string): Promise<void> {
   const event = await loadEvent(eventId);
   const payload = eventToCalendarPayload(event);
   const targets = event.isGlobal
@@ -122,9 +132,13 @@ async function injectForTargets(eventId: string): Promise<void> {
 /**
  * Flusso 3 — update event. Diffs targets:
  * removed teachers → delete Google copy; kept → update; new → insert.
- * isGlobal true → all instances removed (event lives only on bacheca).
+ * isGlobal true → every active teacher is a target.
  */
-export async function updateEvent(eventId: string, input: EventInput): Promise<EventWithRelations> {
+export async function updateEvent(
+  eventId: string,
+  input: EventInput,
+  options: EventOperationOptions = {}
+): Promise<EventWithRelations> {
   const tagIds = await ensureTags(input.tagNames);
   await prisma.event.update({
     where: { id: eventId },
@@ -145,6 +159,7 @@ export async function updateEvent(eventId: string, input: EventInput): Promise<E
   const event = await loadEvent(eventId);
   const payload = eventToCalendarPayload(event);
   const instances = await prisma.eventInstance.findMany({ where: { eventId } });
+  if (!options.skipGeneral) await ensureGeneralCopy(eventId);
 
   if (input.bachecaOnly) {
     // bachecaOnly -> remove every injected copy
@@ -173,10 +188,38 @@ export async function updateEvent(eventId: string, input: EventInput): Promise<E
 }
 
 /** Flusso 3 — delete event everywhere (Google first, then DB cascade). */
-export async function deleteEventEverywhere(eventId: string): Promise<void> {
+export async function deleteEventEverywhere(
+  eventId: string,
+  options: EventOperationOptions = {}
+): Promise<void> {
+  const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
   const instances = await prisma.eventInstance.findMany({ where: { eventId } });
   for (const inst of instances) {
     await gDeleteEvent(inst.calendarId, inst.googleEventId);
   }
+  if (!options.skipGeneral && event.generalGoogleEventId) {
+    const cfg = await prisma.appConfig.findUnique({ where: { id: 1 } });
+    if (cfg?.generalCalendarId) {
+      await gDeleteEvent(cfg.generalCalendarId, event.generalGoogleEventId);
+    }
+  }
   await prisma.event.delete({ where: { id: eventId } });
+}
+
+export async function ensureGeneralCopy(eventId: string): Promise<void> {
+  const cfg = await prisma.appConfig.findUnique({ where: { id: 1 } });
+  if (!cfg?.generalCalendarId) return;
+  const event = await loadEvent(eventId);
+  const payload = eventToCalendarPayload(event);
+  if (event.generalGoogleEventId) {
+    try {
+      await gUpdateEvent(cfg.generalCalendarId, event.generalGoogleEventId, payload);
+      return;
+    } catch (err) {
+      const code = (err as { code?: number }).code;
+      if (code !== 404 && code !== 410) throw err;
+    }
+  }
+  const googleEventId = await insertEvent(cfg.generalCalendarId, payload);
+  await prisma.event.update({ where: { id: eventId }, data: { generalGoogleEventId: googleEventId } });
 }

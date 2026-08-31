@@ -20,6 +20,14 @@ model AppConfig {
   mainGroupEmail        String?
   /// Template for teacher calendar names, e.g. "Calendario Rainerum 26/27 - {nome}"
   calendarNameTemplate  String?
+  generalCalendarId             String?
+  generalCalendarSyncToken      String?
+  generalCalendarChannelId      String?
+  generalCalendarResourceId     String?
+  generalCalendarChannelToken   String?
+  generalCalendarChannelExpiresAt DateTime?
+  generalCalendarLastSyncAt     DateTime?
+  generalCalendarLastError      String?
   updatedAt             DateTime @updatedAt
 }
 
@@ -100,6 +108,9 @@ model Event {
   isGlobal    Boolean  @default(false)
   /// "Solo bacheca": true → NOT injected into teacher calendars
   bachecaOnly Boolean  @default(false)
+  /// Matching event (or expanded occurrence) in the general Google Calendar
+  generalGoogleEventId String? @unique
+  googleOccurrenceKey  String?
   createdById String?
   createdBy   User?    @relation("EventCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { CalendarEventPayload } from "./calendar.js";
+import type { calendar_v3 } from "googleapis";
 
 const base: CalendarEventPayload = {
   title: "Collegio Docenti",
@@ -42,5 +43,52 @@ describe("toGoogleEvent (Flusso 3.3 — campi nativi + extendedProperties)", () 
     const g = toGoogleEvent({ ...base, description: null, location: null });
     expect(g.description).toBeUndefined();
     expect(g.location).toBeUndefined();
+  });
+
+  it("converts an expanded Google occurrence into an editable app event", async () => {
+    const { fromGoogleEvent } = await import("./calendar.js");
+    const source: calendar_v3.Schema$Event = {
+      id: "instance-1",
+      recurringEventId: "series-1",
+      originalStartTime: { dateTime: "2026-09-03T08:00:00+02:00" },
+      summary: "Collegio",
+      description: "Ordine del giorno",
+      location: "Aula magna",
+      start: { dateTime: "2026-09-03T08:00:00+02:00" },
+      end: { dateTime: "2026-09-03T10:00:00+02:00" },
+    };
+
+    expect(fromGoogleEvent(source)).toEqual({
+      googleEventId: "instance-1",
+      occurrenceKey: "series-1:2026-09-03T08:00:00+02:00",
+      title: "Collegio",
+      description: "Ordine del giorno",
+      location: "Aula magna",
+      startsAt: new Date("2026-09-03T06:00:00.000Z"),
+      endsAt: new Date("2026-09-03T08:00:00.000Z"),
+      allDay: false,
+      appEventId: undefined,
+      tagNames: [],
+    });
+  });
+
+  it("preserves Google's exclusive end date for all-day events", async () => {
+    const { fromGoogleEvent } = await import("./calendar.js");
+    const source: calendar_v3.Schema$Event = {
+      id: "day-1",
+      summary: "Festa",
+      start: { date: "2026-09-03" },
+      end: { date: "2026-09-04" },
+    };
+
+    const converted = fromGoogleEvent(source);
+    expect(converted?.allDay).toBe(true);
+    expect(converted?.startsAt.toISOString()).toBe("2026-09-03T00:00:00.000Z");
+    expect(converted?.endsAt.toISOString()).toBe("2026-09-04T00:00:00.000Z");
+  });
+
+  it("ignores cancelled events during conversion", async () => {
+    const { fromGoogleEvent } = await import("./calendar.js");
+    expect(fromGoogleEvent({ id: "gone", status: "cancelled" })).toBeNull();
   });
 });

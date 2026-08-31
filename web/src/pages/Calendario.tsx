@@ -64,13 +64,13 @@ export default function Calendario() {
   const onDateClick = (arg: DateClickArg) => {
     if (!isAdmin) return;
     const start = arg.date;
-    const end = new Date(start.getTime() + 3600e3);
+    const end = new Date(start.getTime() + (arg.allDay ? 86400e3 : 3600e3));
     setDraft({
       title: "",
       description: "",
       location: "",
-      startsAt: toLocalInput(start),
-      endsAt: toLocalInput(end),
+      startsAt: arg.allDay ? start.toISOString().slice(0, 10) : toLocalInput(start),
+      endsAt: arg.allDay ? end.toISOString().slice(0, 10) : toLocalInput(end),
       allDay: arg.allDay,
       isGlobal: false,
       bachecaOnly: false,
@@ -87,8 +87,8 @@ export default function Calendario() {
       title: e.title,
       description: e.description ?? "",
       location: e.location ?? "",
-      startsAt: toLocalInput(new Date(e.startsAt)),
-      endsAt: toLocalInput(new Date(e.endsAt)),
+      startsAt: e.allDay ? e.startsAt.slice(0, 10) : toLocalInput(new Date(e.startsAt)),
+      endsAt: e.allDay ? e.endsAt.slice(0, 10) : toLocalInput(new Date(e.endsAt)),
       allDay: e.allDay,
       isGlobal: e.isGlobal,
       bachecaOnly: e.bachecaOnly,

@@ -8,6 +8,11 @@ import { listGroups } from "../google/directory.js";
 import { requireAdmin } from "../auth/session.js";
 import { runFullSync } from "../services/syncService.js";
 import { DEFAULT_CALENDAR_TEMPLATE } from "../services/calendarName.js";
+import {
+  configureGeneralCalendar,
+  ensureGeneralCalendarWatch,
+  syncGeneralCalendar,
+} from "../services/generalCalendarSync.js";
 import { h, parseBody } from "./helpers.js";
 
 export const adminRouter = Router();
@@ -23,7 +28,34 @@ adminRouter.get(
       masterEmail: cfg?.masterEmail ?? null,
       mainGroupEmail: cfg?.mainGroupEmail ?? null,
       calendarNameTemplate: cfg?.calendarNameTemplate ?? DEFAULT_CALENDAR_TEMPLATE,
+      generalCalendarId: cfg?.generalCalendarId ?? null,
+      generalCalendarLastSyncAt: cfg?.generalCalendarLastSyncAt ?? null,
+      generalCalendarLastError: cfg?.generalCalendarLastError ?? null,
+      generalCalendarWatchExpiresAt: cfg?.generalCalendarChannelExpiresAt ?? null,
     });
+  })
+);
+
+const generalCalendarSchema = z.object({ calendarId: z.string().trim().min(3).max(500) });
+
+adminRouter.post(
+  "/general-calendar",
+  requireAdmin,
+  h(async (req, res) => {
+    const body = parseBody(generalCalendarSchema, req, res);
+    if (!body) return;
+    await configureGeneralCalendar(body.calendarId);
+    res.json({ ok: true });
+  })
+);
+
+adminRouter.post(
+  "/general-calendar/sync",
+  requireAdmin,
+  h(async (_req, res) => {
+    const result = await syncGeneralCalendar();
+    await ensureGeneralCalendarWatch();
+    res.json(result);
   })
 );
 
