@@ -45,7 +45,7 @@ cp server/.env.example server/.env
 
 ### 4. Avvio
 ```bash
-docker compose up -d          # PostgreSQL
+docker compose -f docker-compose.dev.yml up -d # PostgreSQL locale
 npm install
 npm run prisma:push --workspace server   # crea lo schema DB
 npm run dev                   # server :3000 + web :5173
@@ -55,17 +55,37 @@ Apri <http://localhost:5173>, accedi con un account presente in `ADMIN_EMAILS`, 
 
 ## Deploy produzione con Docker
 
-Sul VPS, clona il repository alla revisione da distribuire. Nginx Proxy Manager deve essere già collegato a una rete Docker bridge condivisa: imposta `PROXY_NETWORK` nel file di configurazione al nome di quella rete (il template usa l'esempio `nginx-proxy-manager_default`). La rete deve esistere prima dell'avvio; questo stack non la crea. Inserisci poi valori reali per tutte le credenziali e per `PUBLIC_URL` (l'hostname HTTPS pubblico):
+Sul VPS, clona il repository alla revisione da distribuire. `PROXY_NETWORK` è un prerequisito obbligatorio: deve essere una rete Docker bridge **già usata** dal container di Nginx Proxy Manager. Non indovinare il nome e non eseguire `docker network create`, perché una nuova rete non collega il proxy esistente. Individua invece la rete del container NPM e usa esattamente il nome restituito:
+
+```bash
+docker ps --format '{{.Names}}\t{{.Image}}' | rg -i 'nginx-proxy-manager|jc21/nginx-proxy-manager'
+docker inspect <nome-container-npm> \
+  --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}'
+
+# Sostituisci con una delle reti elencate dal container NPM.
+PROXY_NETWORK=<rete-npm-esistente>
+docker network inspect "$PROXY_NETWORK"
+```
+
+Se il controllo finale fallisce, fermati e correggi il valore: la produzione non può partire senza quella rete esterna. Inserisci poi `PROXY_NETWORK`, le credenziali reali e `PUBLIC_URL` (l'hostname HTTPS pubblico) nel file di configurazione. `POSTGRES_PASSWORD` viene interpolata direttamente in `DATABASE_URL`: deve contenere solo esadecimale URL-safe. Al primo deploy genera il valore con `openssl rand -hex 32` e incollalo senza virgolette; password con punteggiatura arbitraria non sono supportate da questa configurazione.
 
 ```bash
 cp .env.production.example .env.production
 chmod 600 .env.production
+# Modifica .env.production: imposta PROXY_NETWORK alla rete NPM ispezionata
+# e POSTGRES_PASSWORD al valore di `openssl rand -hex 32`.
 docker compose --env-file .env.production up --build -d --wait
 docker compose --env-file .env.production ps
 curl --fail http://127.0.0.1:3000/api/health
 ```
 
-Il comando `ps` deve riportare `app` e `db` come `healthy`; l'health check deve confermare anche il database. PostgreSQL non espone porte sul VPS. Configura Nginx Proxy Manager con schema `http`, host di inoltro `intercomunica` e porta `3000` per l'hostname pubblico. L'app mantiene `127.0.0.1:3000` solo per la diagnostica locale sul VPS. Il supporto WebSocket non è richiesto. Mantieni HTTPS attivo nel proxy e registra in Google Cloud Console questi redirect URI, sostituendo `${PUBLIC_URL}` con il valore HTTPS configurato:
+Il comando `ps` deve riportare `app` e `db` come `healthy`; l'health check deve confermare anche il database. PostgreSQL non espone porte sul VPS. I comandi `curl` assumono il valore predefinito `APP_PORT=3000`; con una porta personalizzata usa invece:
+
+```bash
+curl --fail "http://$(docker compose --env-file .env.production port app 3000)/api/health"
+```
+
+Configura Nginx Proxy Manager con schema `http`, host di inoltro `intercomunica` e porta `3000` per l'hostname pubblico. L'alias proxy stabile `intercomunica` deve essere univoco su `PROXY_NETWORK`: non collegare uno stack di staging parallelo alla stessa rete con lo stesso alias. Lo staging richiede una rete proxy separata e un alias dedicato nella propria configurazione Compose. L'app mantiene `127.0.0.1:3000` solo per la diagnostica locale sul VPS. Il supporto WebSocket non è richiesto. Mantieni HTTPS attivo nel proxy e registra in Google Cloud Console questi redirect URI, sostituendo `${PUBLIC_URL}` con il valore HTTPS configurato:
 
 ```text
 ${PUBLIC_URL}/api/auth/google/callback
@@ -82,7 +102,7 @@ docker compose --env-file .env.production up --build -d --wait
 docker compose --env-file .env.production logs --tail=200 app
 ```
 
-Controlla poi `docker compose --env-file .env.production ps` e `curl --fail http://127.0.0.1:3000/api/health`.
+Controlla poi `docker compose --env-file .env.production ps` e, con `APP_PORT=3000`, `curl --fail http://127.0.0.1:3000/api/health`; per una porta personalizzata usa il comando `docker compose ... port` indicato sopra.
 
 ### Backup e ripristino del database
 

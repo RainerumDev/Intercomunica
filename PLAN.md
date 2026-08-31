@@ -63,6 +63,10 @@
 - [x] Verifica fresh-stack e riavvio idempotente
 - [x] Guida operativa per deploy, aggiornamenti, backup, ripristino e rollback
 
+### Follow-up deploy Docker (2026-08-31)
+- [ ] Aggiungere un test d'integrazione a livello route per `GET /api/health`; il rinvio è esplicitamente accettabile perché i test unitari del checker coprono questa release e non serve una nuova dipendenza.
+- [ ] Riesaminare i risultati di `npm audit` e applicare solo correzioni motivate e compatibili; non aggiornare le dipendenze alla cieca.
+
 ## Verification commands
 - `npm run typecheck --workspaces`
 - `npm test --workspace server`

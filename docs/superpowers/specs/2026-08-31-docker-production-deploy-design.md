@@ -20,8 +20,10 @@ A multi-stage Dockerfile will:
 1. Install dependencies deterministically with `npm ci`.
 2. Generate the Prisma client.
 3. Build the TypeScript server and Vite frontend.
-4. Copy production dependencies, Prisma files, server build, and frontend build into a minimal Node.js 22 Alpine runtime image.
+4. Copy production dependencies, Prisma files, server build, and frontend build into a Node.js 22 Debian slim runtime image.
 5. Run as the unprivileged `node` user.
+
+Debian slim is an intentional, accepted trade-off for the application image: its glibc baseline is supported by Prisma and it installs the OpenSSL runtime dependency through `apt`. The small image-size increase is preferred to Alpine-specific Prisma/OpenSSL compatibility handling.
 
 The runtime starts through a small shell entrypoint. It executes `prisma migrate deploy` and then replaces itself with `node server/dist/index.js`. Migration deployment is idempotent and safe on every restart.
 
@@ -44,15 +46,15 @@ Production rollback does not automatically reverse database migrations. The init
 - PostgreSQL database, user, and strong password;
 - optional signage token.
 
-The Compose file contains no production passwords. `DATABASE_URL` is assembled inside Compose from the database variables.
+The Compose file contains no production passwords. `DATABASE_URL` is assembled inside Compose from the database variables without percent-encoding, so `POSTGRES_PASSWORD` must be URL-safe hexadecimal generated with `openssl rand -hex 32`; arbitrary punctuation passwords are not supported.
 
 ## Networking and health
 
-PostgreSQL receives a `pg_isready` healthcheck. The app waits for the database health condition before starting.
+PostgreSQL receives a `pg_isready` healthcheck. The app waits for the database health condition before starting. A separate `docker-compose.dev.yml` retains the DB-only PostgreSQL path for local development.
 
 The application health endpoint will verify both process availability and database connectivity. Docker uses it as the app healthcheck. A failed database check returns HTTP 503 rather than reporting a false healthy state.
 
-The app binds to `127.0.0.1:3000` on the VPS. If Nginx Proxy Manager runs as a container on the same host and cannot reach host loopback, the operator can either use its Docker host gateway or attach it to the Intercomunica frontend network; this topology-specific NPM configuration stays outside this repository.
+The app binds to `127.0.0.1:3000` on the VPS and also joins the existing external Nginx Proxy Manager network selected by the mandatory `PROXY_NETWORK` value. This network must exist before Compose starts. On that network the app has the stable `intercomunica` alias, which must be unique; parallel staging uses a separate proxy network and alias.
 
 ## Operations
 
@@ -78,6 +80,8 @@ The implementation is accepted when:
 7. `/` and a client-side route return the React application.
 8. PostgreSQL has no published host port.
 9. Restarting the stack does not reapply or fail the migration.
+
+A route-level integration test for `/api/health` is intentionally deferred; the existing checker unit coverage is sufficient for this deployment change and no new test dependency is required.
 
 ## Non-goals
 
