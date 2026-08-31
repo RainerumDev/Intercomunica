@@ -38,7 +38,10 @@ services:
     ports:
       - "127.0.0.1:${APP_PORT:-3000}:3000"
     networks:
-      - backend
+      backend:
+      proxy:
+        aliases:
+          - intercomunica
     healthcheck:
       test:
         - CMD
@@ -55,3 +58,6 @@ volumes:
 
 networks:
   backend:
+  proxy:
+    name: ${PROXY_NETWORK}
+    external: true

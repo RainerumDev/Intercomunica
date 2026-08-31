@@ -222,4 +222,3 @@ ALTER TABLE "EventInstance" ADD CONSTRAINT "EventInstance_userId_fkey" FOREIGN K
 
 -- AddForeignKey
 ALTER TABLE "Guardian" ADD CONSTRAINT "Guardian_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-

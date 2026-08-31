@@ -55,7 +55,7 @@ Apri <http://localhost:5173>, accedi con un account presente in `ADMIN_EMAILS`, 
 
 ## Deploy produzione con Docker
 
-Sul VPS, clona il repository alla revisione da distribuire e prepara il file di configurazione, inserendo valori reali per tutte le credenziali e per `PUBLIC_URL` (l'hostname HTTPS pubblico):
+Sul VPS, clona il repository alla revisione da distribuire. Nginx Proxy Manager deve essere già collegato a una rete Docker bridge condivisa: imposta `PROXY_NETWORK` nel file di configurazione al nome di quella rete (il template usa l'esempio `nginx-proxy-manager_default`). La rete deve esistere prima dell'avvio; questo stack non la crea. Inserisci poi valori reali per tutte le credenziali e per `PUBLIC_URL` (l'hostname HTTPS pubblico):
 
 ```bash
 cp .env.production.example .env.production
@@ -65,7 +65,7 @@ docker compose --env-file .env.production ps
 curl --fail http://127.0.0.1:3000/api/health
 ```
 
-Il comando `ps` deve riportare `app` e `db` come `healthy`; l'health check deve confermare anche il database. PostgreSQL non espone porte sul VPS. Configura Nginx Proxy Manager con schema `http`, host di inoltro `127.0.0.1` e porta `3000` per l'hostname pubblico. Il supporto WebSocket non è richiesto. Mantieni HTTPS attivo nel proxy e registra in Google Cloud Console questi redirect URI, sostituendo `${PUBLIC_URL}` con il valore HTTPS configurato:
+Il comando `ps` deve riportare `app` e `db` come `healthy`; l'health check deve confermare anche il database. PostgreSQL non espone porte sul VPS. Configura Nginx Proxy Manager con schema `http`, host di inoltro `intercomunica` e porta `3000` per l'hostname pubblico. L'app mantiene `127.0.0.1:3000` solo per la diagnostica locale sul VPS. Il supporto WebSocket non è richiesto. Mantieni HTTPS attivo nel proxy e registra in Google Cloud Console questi redirect URI, sostituendo `${PUBLIC_URL}` con il valore HTTPS configurato:
 
 ```text
 ${PUBLIC_URL}/api/auth/google/callback
