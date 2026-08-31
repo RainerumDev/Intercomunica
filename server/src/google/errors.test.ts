@@ -41,6 +41,16 @@ describe("mapGoogleError", () => {
     expect(m?.body.code).toBe("GOOGLE_FORBIDDEN");
   });
 
+  it("maps Calendar 404 to missing calendar access guidance", () => {
+    const m = mapGoogleError(
+      gaxios(404, "https://www.googleapis.com/calendar/v3/calendars/example/events", "Not Found")
+    );
+    expect(m?.httpStatus).toBe(404);
+    expect(m?.body.code).toBe("CALENDAR_NOT_ACCESSIBLE");
+    expect(m?.body.error).toContain("account master");
+    expect(m?.body.error.toLowerCase()).toContain("apportare modifiche agli eventi");
+  });
+
   it("maps invalid_grant to MASTER_TOKEN_REVOKED regardless of url", () => {
     const m = mapGoogleError({ message: "invalid_grant", status: 400 });
     expect(m?.httpStatus).toBe(409);

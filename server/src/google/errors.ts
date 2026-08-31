@@ -103,5 +103,17 @@ export function mapGoogleError(err: unknown): MappedGoogleError | null {
     };
   }
 
+  if (status === 404 && url.includes("www.googleapis.com/calendar/v3/calendars/")) {
+    return {
+      httpStatus: 404,
+      body: {
+        code: "CALENDAR_NOT_ACCESSIBLE",
+        error:
+          "Calendario Google non trovato o non accessibile dall'account master. " +
+          "Verificare l'ID e condividere il calendario con l'account master assegnando il permesso «Apportare modifiche agli eventi».",
+      },
+    };
+  }
+
   return null;
 }
