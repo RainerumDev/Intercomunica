@@ -57,10 +57,14 @@ export function CalendarResources({ links, onRotate }: CalendarResourcesProps) {
 
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
+    const activeElement = document.activeElement as HTMLElement | null;
+    if (!activeElement || !focusable.includes(activeElement)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    } else if (event.shiftKey && activeElement === first) {
       event.preventDefault();
       last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
+    } else if (!event.shiftKey && activeElement === last) {
       event.preventDefault();
       first.focus();
     }

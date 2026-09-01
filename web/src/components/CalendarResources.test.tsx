@@ -136,4 +136,44 @@ describe("CalendarResources personal dialog", () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(trigger);
   });
+
+  it("traps Tab when a pending rotation disables the focused final control", async () => {
+    let resolveRotation: (value: CalendarLinks) => void = () => {};
+    const pendingRotation = new Promise<CalendarLinks>((resolve) => {
+      resolveRotation = resolve;
+    });
+    const originalConfirm = window.confirm;
+    window.confirm = () => true;
+
+    try {
+      await act(async () => {
+        root.render(<CalendarResources links={links} onRotate={() => pendingRotation} />);
+      });
+
+      const trigger = buttonByText("Collega il mio calendario");
+      await act(async () => trigger.click());
+      const dialog = container.querySelector('[role="dialog"]');
+      if (!(dialog instanceof HTMLDivElement)) throw new Error("Dialog not found");
+      const rotateButton = Array.from(dialog.querySelectorAll("button")).find(
+        (button) => button.textContent === "Rigenera collegamento"
+      );
+      const closeButton = dialog.querySelector('button[aria-label="Chiudi"]');
+      if (!(rotateButton instanceof HTMLButtonElement) || !(closeButton instanceof HTMLButtonElement)) {
+        throw new Error("Dialog controls not found");
+      }
+
+      rotateButton.focus();
+      await act(async () => rotateButton.click());
+      expect(rotateButton.disabled).toBe(true);
+      expect(document.activeElement).toBe(rotateButton);
+
+      await act(async () => {
+        rotateButton.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+      });
+      expect(document.activeElement).toBe(closeButton);
+    } finally {
+      await act(async () => resolveRotation(links));
+      window.confirm = originalConfirm;
+    }
+  });
 });
