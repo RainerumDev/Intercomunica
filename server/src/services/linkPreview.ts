@@ -6,7 +6,6 @@ import { Readable } from "node:stream";
 
 const MAX_REDIRECTS = 3;
 const MAX_HTML_BYTES = 1024 * 1024;
-const MAX_IMAGE_URL_LENGTH = 2048;
 const MAX_TITLE_LENGTH = 160;
 const MAX_DESCRIPTION_LENGTH = 500;
 const MAX_SITE_NAME_LENGTH = 160;
@@ -365,34 +364,7 @@ function attributesForTag(tag: string): Record<string, string> {
   return attributes;
 }
 
-async function safePreviewImageUrl(
-  value: string | undefined,
-  finalUrl: string,
-  dependencies: LinkPreviewDependencies,
-  signal: AbortSignal
-): Promise<string | null> {
-  const image = normalizeMetadata(value, MAX_IMAGE_URL_LENGTH + 1);
-  if (!image || image.length > MAX_IMAGE_URL_LENGTH) return null;
-
-  try {
-    const resolved = new URL(image, finalUrl).toString();
-    await resolvePublicHttpUrl(resolved, dependencies.lookup, signal);
-  } catch {
-    if (signal.aborted) throw deadlineError(signal);
-    return null;
-  }
-
-  // A later browser request performs fresh DNS resolution that this server cannot pin.
-  // Keep the public-only guarantee by never exposing an external image URL to clients.
-  return null;
-}
-
-async function extractMetadata(
-  html: string,
-  finalUrl: string,
-  dependencies: LinkPreviewDependencies,
-  signal: AbortSignal
-): Promise<Omit<LinkPreview, "finalUrl">> {
+function extractMetadata(html: string): Omit<LinkPreview, "finalUrl"> {
   const openGraph = new Map<string, string>();
   const metaTagPattern = /<meta\b(?:"[^"]*"|'[^']*'|[^'">])*>/gi;
 
@@ -409,17 +381,13 @@ async function extractMetadata(
     openGraph.get("og:title") ?? titleElement?.replace(/<[^>]*>/g, ""),
     MAX_TITLE_LENGTH
   );
-  const imageUrl = await safePreviewImageUrl(
-    openGraph.get("og:image"),
-    finalUrl,
-    dependencies,
-    signal
-  );
 
   return {
     title,
     description: normalizeMetadata(openGraph.get("og:description"), MAX_DESCRIPTION_LENGTH),
-    imageUrl,
+    // Browser DNS cannot be pinned to the server-validated address, so never
+    // resolve or expose attacker-controlled og:image destinations.
+    imageUrl: null,
     siteName: normalizeMetadata(openGraph.get("og:site_name"), MAX_SITE_NAME_LENGTH),
   };
 }
@@ -472,12 +440,7 @@ export async function fetchLinkPreview(
         const html = await readBoundedHtml(response, deadline.signal);
         return {
           finalUrl: validatedUrl.toString(),
-          ...await extractMetadata(
-            html,
-            validatedUrl.toString(),
-            dependencies,
-            deadline.signal
-          ),
+          ...extractMetadata(html),
         };
       } finally {
         if (response.body && !response.body.locked) {

@@ -1,7 +1,8 @@
 import { Router } from "express";
-import { Prisma } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../db.js";
+import { serializableTransaction } from "../db/serializableTransaction.js";
 import { requireAuth, requireAdmin } from "../auth/session.js";
 import { h, parseBody } from "./helpers.js";
 
@@ -12,6 +13,28 @@ export class SubgroupResourceAudienceConflictError extends Error {
     super(`Subgroup ${subgroupId} is the sole audience of a shared resource`);
     this.name = "SubgroupResourceAudienceConflictError";
   }
+}
+
+export async function deleteSubgroupPreservingResourceAudiences(
+  subgroupId: string,
+  client: Pick<PrismaClient, "$transaction"> = prisma
+): Promise<void> {
+  await serializableTransaction(client, async (transaction) => {
+    const orphanedResource = await transaction.sharedResource.findFirst({
+      where: {
+        isGlobal: false,
+        AND: [
+          { subgroups: { some: { subgroupId } } },
+          { subgroups: { none: { subgroupId: { not: subgroupId } } } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (orphanedResource) {
+      throw new SubgroupResourceAudienceConflictError(subgroupId);
+    }
+    await transaction.subgroup.delete({ where: { id: subgroupId } });
+  });
 }
 
 /** Flusso 4.1 — everyone can consult the directory of subgroups + members. */
@@ -79,22 +102,7 @@ subgroupsRouter.delete(
   requireAdmin,
   h(async (req, res) => {
     try {
-      await prisma.$transaction(async (transaction) => {
-        const orphanedResource = await transaction.sharedResource.findFirst({
-          where: {
-            isGlobal: false,
-            AND: [
-              { subgroups: { some: { subgroupId: req.params.id } } },
-              { subgroups: { none: { subgroupId: { not: req.params.id } } } },
-            ],
-          },
-          select: { id: true },
-        });
-        if (orphanedResource) {
-          throw new SubgroupResourceAudienceConflictError(req.params.id);
-        }
-        await transaction.subgroup.delete({ where: { id: req.params.id } });
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      await deleteSubgroupPreservingResourceAudiences(req.params.id);
       res.json({ ok: true });
     } catch (error) {
       if (error instanceof SubgroupResourceAudienceConflictError) {

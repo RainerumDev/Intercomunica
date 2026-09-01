@@ -302,7 +302,7 @@ describe("fetchLinkPreview metadata extraction", () => {
     });
   });
 
-  it("resolves and rejects a private DNS destination in Open Graph image metadata", async () => {
+  it("omits Open Graph images without resolving their attacker-controlled hostname", async () => {
     const lookup = vi.fn(async (hostname: string) => hostname === "images.example.org"
       ? [{ address: "10.0.0.8", family: 4 }]
       : PUBLIC_DNS_RESULT
@@ -316,7 +316,29 @@ describe("fetchLinkPreview metadata extraction", () => {
     await expect(fetchLinkPreview("https://example.org/article", dependencies)).resolves.toMatchObject({
       imageUrl: null,
     });
-    expect(lookup).toHaveBeenCalledWith("images.example.org");
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(lookup).toHaveBeenCalledWith("example.org");
+  });
+
+  it("allows exactly three redirects and validates every destination", async () => {
+    const lookup = vi.fn(async () => PUBLIC_DNS_RESULT);
+    const dependencies = previewDependencies([
+      new Response(null, { status: 302, headers: { location: "https://one.example/step" } }),
+      new Response(null, { status: 302, headers: { location: "https://two.example/step" } }),
+      new Response(null, { status: 302, headers: { location: "https://three.example/final" } }),
+      new Response("<title>Final</title>", { headers: { "content-type": "text/html" } }),
+    ], lookup);
+
+    await expect(fetchLinkPreview("https://start.example", dependencies)).resolves.toMatchObject({
+      finalUrl: "https://three.example/final",
+      title: "Final",
+    });
+    expect(lookup.mock.calls.map(([hostname]) => hostname)).toEqual([
+      "start.example",
+      "one.example",
+      "two.example",
+      "three.example",
+    ]);
   });
 
   it("caps text metadata and discards oversized image metadata", async () => {

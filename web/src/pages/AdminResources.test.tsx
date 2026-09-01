@@ -221,10 +221,20 @@ describe("AdminResources", () => {
 
   it("refreshes authoritative state after an audience conflict without losing the draft", async () => {
     const user = userEvent.setup();
-    const authoritative = { ...first, title: "Prima autoritativa" };
+    const targeted = { ...first, isGlobal: false, subgroupIds: ["old-group"] };
+    const authoritative = { ...targeted, title: "Prima autoritativa" };
+    const oldSubgroup: Subgroup = {
+      id: "old-group", name: "Gruppo eliminato", description: null, members: [],
+    };
+    const newSubgroup: Subgroup = {
+      id: "new-group", name: "Gruppo disponibile", description: null, members: [],
+    };
     vi.spyOn(adminResourcesApi, "list")
-      .mockResolvedValueOnce([first, second])
+      .mockResolvedValueOnce([targeted, second])
       .mockResolvedValueOnce([authoritative]);
+    vi.mocked(api.get)
+      .mockResolvedValueOnce([oldSubgroup])
+      .mockResolvedValueOnce([newSubgroup]);
     vi.spyOn(adminResourcesApi, "update").mockRejectedValue(
       new ApiError(409, "Uno o più sottogruppi selezionati non esistono più", "RESOURCE_AUDIENCE_CONFLICT")
     );
@@ -241,6 +251,9 @@ describe("AdminResources", () => {
     expect((screen.getByRole("textbox", { name: "Titolo" }) as HTMLInputElement).value).toBe("Bozza preservata");
     expect(await screen.findByRole("heading", { name: "Prima autoritativa" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Seconda" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "Gruppo eliminato" })).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "Gruppo disponibile" })).toBeTruthy();
+    expect(api.get).toHaveBeenCalledTimes(2);
   });
 
   it("keeps remaining resource controls disabled until the post-delete refresh settles", async () => {

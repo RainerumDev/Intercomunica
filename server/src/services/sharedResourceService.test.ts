@@ -42,6 +42,7 @@ function cloneResource(value: ResourceRecord): ResourceRecord {
 class FakeResourceRepository implements SharedResourceRepository {
   resources: ResourceRecord[];
   userSubgroups = new Map<string, string[]>();
+  audienceTransactions = 0;
   private nextId = 1;
 
   constructor(resources: ResourceRecord[] = []) {
@@ -95,7 +96,7 @@ class FakeResourceRepository implements SharedResourceRepository {
     return [...(this.userSubgroups.get(userId) ?? [])];
   }
 
-  async transaction<T>(work: (repository: SharedResourceRepository) => Promise<T>): Promise<T> {
+  private async runTransaction<T>(work: (repository: SharedResourceRepository) => Promise<T>): Promise<T> {
     const resourceSnapshot = this.resources.map(cloneResource);
     const subgroupSnapshot = new Map(
       [...this.userSubgroups.entries()].map(([userId, subgroupIds]) => [userId, [...subgroupIds]])
@@ -107,6 +108,15 @@ class FakeResourceRepository implements SharedResourceRepository {
       this.userSubgroups = subgroupSnapshot;
       throw error;
     }
+  }
+
+  async transaction<T>(work: (repository: SharedResourceRepository) => Promise<T>): Promise<T> {
+    return this.runTransaction(work);
+  }
+
+  async audienceTransaction<T>(work: (repository: SharedResourceRepository) => Promise<T>): Promise<T> {
+    this.audienceTransactions++;
+    return this.runTransaction(work);
   }
 }
 
@@ -169,6 +179,16 @@ describe("resourceInputSchema", () => {
 });
 
 describe("shared resources", () => {
+  it("routes both create and update audience mutations through the audience transaction", async () => {
+    const repository = new FakeResourceRepository();
+    const service = resourceService(repository);
+
+    const created = await service.createResource(input);
+    await service.updateResource(created.id, { ...input, subgroupIds: ["g2"] });
+
+    expect(repository.audienceTransactions).toBe(2);
+  });
+
   it("lists only global and matching subgroup resources in stable resource order", async () => {
     const repository = new FakeResourceRepository([
       resource({ id: "r-global", isGlobal: true, sortOrder: 1, createdAt: new Date("2026-09-01T10:00:00.000Z") }),

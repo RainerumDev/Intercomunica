@@ -1,6 +1,7 @@
 import { PrismaClient, type SharedResource, type SharedResourceSubgroup } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../db.js";
+import { serializableTransaction } from "../db/serializableTransaction.js";
 import { fetchLinkPreview, type LinkPreview } from "./linkPreview.js";
 
 export type SharedResourceInput = {
@@ -100,6 +101,7 @@ export interface SharedResourceRepository {
   deleteResource(id: string): Promise<void>;
   listUserSubgroupIds(userId: string): Promise<string[]>;
   transaction<T>(work: (repository: SharedResourceRepository) => Promise<T>): Promise<T>;
+  audienceTransaction<T>(work: (repository: SharedResourceRepository) => Promise<T>): Promise<T>;
 }
 
 function sortedResources(resources: ResourceRecord[]): ResourceRecord[] {
@@ -153,7 +155,7 @@ export function createSharedResourceService(
     async createResource(input: SharedResourceInput): Promise<ResourceRecord> {
       const normalized = normalizeInput(input);
       const preview = await fetchedPreviewData(normalized, fetchPreview);
-      return repository.transaction(async (transaction) => {
+      return repository.audienceTransaction(async (transaction) => {
         const currentResources = await transaction.listResources();
         const sortOrder = Math.max(-1, ...currentResources.map((resource) => resource.sortOrder)) + 1;
         return transaction.createResource({ ...resourceData(normalized, preview.previewFetchedAt), ...preview, sortOrder });
@@ -163,7 +165,7 @@ export function createSharedResourceService(
     async updateResource(id: string, input: SharedResourceInput): Promise<ResourceRecord> {
       const normalized = normalizeInput(input);
       const preview = await fetchedPreviewData(normalized, fetchPreview);
-      return repository.transaction(async (transaction) => {
+      return repository.audienceTransaction(async (transaction) => {
         const current = requireResource(await transaction.findResource(id), id);
         return transaction.updateResource(id, {
           ...resourceData(normalized, preview.previewFetchedAt),
@@ -241,7 +243,9 @@ function toResourceRecord(resource: PrismaResourceWithSubgroups): ResourceRecord
   };
 }
 
-function resourceRepositoryOperations(client: PrismaResourceClient): Omit<SharedResourceRepository, "transaction"> {
+function resourceRepositoryOperations(
+  client: PrismaResourceClient
+): Omit<SharedResourceRepository, "transaction" | "audienceTransaction"> {
   return {
     async listResources() {
       const resources = await client.sharedResource.findMany({ include: { subgroups: true } });
@@ -302,13 +306,31 @@ function transactionRepository(client: PrismaResourceClient): SharedResourceRepo
   return {
     ...resourceRepositoryOperations(client),
     transaction: (work) => work(transactionRepository(client)),
+    audienceTransaction: (work) => work(transactionRepository(client)),
   };
 }
 
-export const prismaSharedResourceRepository: SharedResourceRepository = {
-  ...resourceRepositoryOperations(prisma),
-  transaction: (work) => prisma.$transaction((transaction) => work(transactionRepository(transaction))),
-};
+type PrismaResourceRootClient = Pick<
+  PrismaClient,
+  "sharedResource" | "subgroupMember" | "$transaction"
+>;
+
+export function createPrismaSharedResourceRepository(
+  client: PrismaResourceRootClient
+): SharedResourceRepository {
+  return {
+    ...resourceRepositoryOperations(client),
+    transaction: (work) => client.$transaction(
+      (transaction) => work(transactionRepository(transaction))
+    ),
+    audienceTransaction: (work) => serializableTransaction(
+      client,
+      (transaction) => work(transactionRepository(transaction))
+    ),
+  };
+}
+
+export const prismaSharedResourceRepository = createPrismaSharedResourceRepository(prisma);
 
 const defaultService = createSharedResourceService(prismaSharedResourceRepository);
 

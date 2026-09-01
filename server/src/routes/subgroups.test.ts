@@ -42,6 +42,12 @@ function adminCookie(): string {
 describe("subgroup deletion resource audience invariant", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    database.prisma.$transaction.mockReset().mockImplementation(
+      async (work: (client: typeof database.transaction) => Promise<unknown>) =>
+        work(database.transaction)
+    );
+    database.transaction.sharedResource.findFirst.mockReset();
+    database.transaction.subgroup.delete.mockReset();
   });
 
   it("returns typed 409 and preserves a subgroup that is a resource's sole audience", async () => {
@@ -86,5 +92,35 @@ describe("subgroup deletion resource audience invariant", () => {
     expect(database.transaction.subgroup.delete).toHaveBeenCalledWith({
       where: { id: "group-1" },
     });
+  });
+
+  it("retries P2034 and re-evaluates the invariant as a typed conflict", async () => {
+    database.prisma.$transaction.mockRejectedValueOnce(
+      Object.assign(new Error("write conflict"), { code: "P2034" })
+    );
+    database.transaction.sharedResource.findFirst.mockResolvedValue({ id: "resource-1" });
+
+    const response = await request(createApp())
+      .delete("/api/subgroups/group-1")
+      .set("Cookie", adminCookie());
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe("SUBGROUP_RESOURCE_AUDIENCE_CONFLICT");
+    expect(database.prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(database.transaction.subgroup.delete).not.toHaveBeenCalled();
+  });
+
+  it("does not retry non-P2034 subgroup deletion failures", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    database.prisma.$transaction.mockRejectedValueOnce(
+      Object.assign(new Error("foreign key failure"), { code: "P2003" })
+    );
+
+    const response = await request(createApp())
+      .delete("/api/subgroups/group-1")
+      .set("Cookie", adminCookie());
+
+    expect(response.status).toBe(500);
+    expect(database.prisma.$transaction).toHaveBeenCalledOnce();
   });
 });

@@ -53,6 +53,23 @@ export default function AdminResources() {
     }
   };
 
+  const refreshResourceAudiences = async () => {
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const [loadedResources, loadedSubgroups] = await Promise.all([
+        adminResourcesApi.list(),
+        api.get<Subgroup[]>("/api/subgroups"),
+      ]);
+      setResources(loadedResources);
+      setSubgroups(loadedSubgroups);
+    } catch (error) {
+      setRefreshError((error as Error).message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   useEffect(() => {
     void loadCollection();
   }, [loadCollection]);
@@ -96,7 +113,11 @@ export default function AdminResources() {
       setEditor(null);
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
-        await refreshResources();
+        if (error.code === "RESOURCE_AUDIENCE_CONFLICT") {
+          await refreshResourceAudiences();
+        } else {
+          await refreshResources();
+        }
       }
       throw error;
     } finally {
