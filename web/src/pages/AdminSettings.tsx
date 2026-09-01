@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import type { AdminConfig, GeneralCalendarSyncResult, SyncLogEntry, SyncResult } from "../types";
 
@@ -7,8 +7,6 @@ interface GroupOption {
   name?: string;
 }
 
-const NAME_PLACEHOLDER = "{nome}";
-const PREVIEW_TEACHER = "Mario Rossi";
 const GENERAL_CALENDAR_EXAMPLE = "c_b4c23e467aa6ec43d9d5da28d534233058f7c18cbc8c0341333535c72eb87c29@group.calendar.google.com";
 
 export default function AdminSettings() {
@@ -17,9 +15,6 @@ export default function AdminSettings() {
   const [selectedGroup, setSelectedGroup] = useState("");
   const [manualGroup, setManualGroup] = useState("");
   const [groupsHint, setGroupsHint] = useState<string | null>(null);
-  const [nameTemplate, setNameTemplate] = useState("");
-  const [nameSaved, setNameSaved] = useState(false);
-  const nameInputRef = useRef<HTMLInputElement | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [generalCalendarId, setGeneralCalendarId] = useState("");
   const [savingGeneralCalendar, setSavingGeneralCalendar] = useState(false);
@@ -36,7 +31,6 @@ export default function AdminSettings() {
     api.get<AdminConfig>("/api/admin/config").then((c) => {
       setCfg(c);
       setSelectedGroup(c.mainGroupEmail ?? "");
-      setNameTemplate(c.calendarNameTemplate);
       setGeneralCalendarId(c.generalCalendarId ?? "");
     });
 
@@ -59,30 +53,6 @@ export default function AdminSettings() {
         setError((e as Error).message);
       }
     }
-  };
-
-  const saveNameTemplate = async () => {
-    setError(null);
-    setNameSaved(false);
-    try {
-      await api.post("/api/admin/calendar-name", { template: nameTemplate.trim() });
-      setNameSaved(true);
-      await loadConfig();
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
-
-  const insertPlaceholder = () => {
-    const input = nameInputRef.current;
-    const pos = input?.selectionStart ?? nameTemplate.length;
-    const next = nameTemplate.slice(0, pos) + NAME_PLACEHOLDER + nameTemplate.slice(pos);
-    setNameTemplate(next);
-    setNameSaved(false);
-    requestAnimationFrame(() => {
-      input?.focus();
-      input?.setSelectionRange(pos + NAME_PLACEHOLDER.length, pos + NAME_PLACEHOLDER.length);
-    });
   };
 
   const saveGroup = async (groupEmail: string) => {
@@ -242,63 +212,8 @@ export default function AdminSettings() {
         </div>
       </section>
 
-      {/* Nome dei calendari docente */}
       <section className="rounded-lg bg-white border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-800 mb-2">3. Nome dei calendari</h2>
-        <p className="text-sm text-gray-500 mb-3">
-          Modello usato per il nome del calendario di ogni docente. Usa il segnaposto{" "}
-          <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs">{NAME_PLACEHOLDER}</code> per
-          inserire il nome del docente nel punto desiderato.
-        </p>
-        <div className="flex gap-2">
-          <input
-            ref={nameInputRef}
-            value={nameTemplate}
-            onChange={(e) => {
-              setNameTemplate(e.target.value);
-              setNameSaved(false);
-            }}
-            placeholder={`Calendario Rainerum 26/27 - ${NAME_PLACEHOLDER}`}
-            className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm font-mono"
-          />
-          <button
-            onClick={insertPlaceholder}
-            title="Inserisci il segnaposto del nome docente nella posizione del cursore"
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 whitespace-nowrap"
-          >
-            + Nome docente
-          </button>
-          <button
-            onClick={saveNameTemplate}
-            disabled={!nameTemplate.trim() || nameTemplate === cfg.calendarNameTemplate}
-            className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
-          >
-            Salva
-          </button>
-        </div>
-        <p className="mt-3 text-sm text-gray-600">
-          Anteprima:{" "}
-          <span className="font-medium text-gray-900">
-            {(nameTemplate.trim() || `Calendario Rainerum 26/27 - ${NAME_PLACEHOLDER}`).replaceAll(
-              NAME_PLACEHOLDER,
-              PREVIEW_TEACHER
-            )}
-          </span>
-        </p>
-        {!nameTemplate.includes(NAME_PLACEHOLDER) && nameTemplate.trim() !== "" && (
-          <p className="mt-2 rounded bg-amber-50 text-amber-800 px-3 py-2 text-sm">
-            ⚠️ Senza {NAME_PLACEHOLDER} tutti i calendari avranno lo stesso identico nome.
-          </p>
-        )}
-        {nameSaved && (
-          <p className="mt-2 rounded bg-green-50 text-green-700 px-3 py-2 text-sm">
-            ✓ Salvato. I calendari esistenti verranno rinominati alla prossima sincronizzazione.
-          </p>
-        )}
-      </section>
-
-      <section className="rounded-lg bg-white border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-800 mb-2">4. Calendario generale</h2>
+        <h2 className="font-semibold text-gray-800 mb-2">3. Calendario generale</h2>
         <p className="text-sm text-gray-500 mb-3">
           Tutti gli eventi vengono salvati qui. Gli eventi creati direttamente su Google vengono
           importati come visibili a tutti; la prima importazione considera gli ultimi 30 giorni e il futuro.
@@ -346,10 +261,9 @@ export default function AdminSettings() {
 
       {/* Flusso 1.3/1.4 — sync */}
       <section className="rounded-lg bg-white border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-800 mb-2">5. Sincronizzazione docenti</h2>
+        <h2 className="font-semibold text-gray-800 mb-2">4. Sincronizzazione docenti</h2>
         <p className="text-sm text-gray-500 mb-3">
-          Importa i membri del gruppo, crea i calendari condivisi mancanti e riconcilia gli
-          eventi tra database e Google Calendar.
+          Importa i membri del gruppo e rimuove eventuali calendari personali Google ancora presenti.
         </p>
         <button
           onClick={runSync}
@@ -404,10 +318,8 @@ export default function AdminSettings() {
             <p>Nuovi docenti: {syncResult.added.length}</p>
             <p>Disattivati: {syncResult.deactivated.length}</p>
             <p>Riattivati: {syncResult.reactivated.length}</p>
-            <p>Calendari creati: {syncResult.calendarsCreated.length}</p>
-            <p>Calendari rinominati: {syncResult.calendarsRenamed.length}</p>
-            <p>Eventi re-iniettati: {syncResult.eventsReinjected}</p>
-            <p>Eventi orfani rimossi: {syncResult.orphansRemoved}</p>
+            <p>Calendari personali rimossi: {syncResult.calendarsRemoved.length}</p>
+            <p>Calendari personali ancora da rimuovere: {syncResult.calendarsPending.length}</p>
             {syncResult.errors.length > 0 && (
               <div className="text-red-700">
                 Errori:

@@ -79,6 +79,14 @@ export interface GeneralCalendarSyncResult {
   deleted: number;
 }
 
+export interface CalendarLinks {
+  generalGoogleUrl: string | null;
+  personalIcsUrl: string | null;
+  personalWebcalUrl: string | null;
+  personalFeedEligible: boolean;
+  lastFetchedAt: string | null;
+}
+
 export interface SyncLogEntry {
   id: string;
   type: string;
@@ -92,9 +100,7 @@ export interface SyncResult {
   added: string[];
   deactivated: string[];
   reactivated: string[];
-  calendarsCreated: string[];
-  calendarsRenamed: string[];
-  eventsReinjected: number;
-  orphansRemoved: number;
+  calendarsRemoved: string[];
+  calendarsPending: string[];
   errors: string[];
 }
