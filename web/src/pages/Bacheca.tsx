@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import type { BachecaSection } from "../types";
+import ResourceCard from "../components/ResourceCard";
+import type { BachecaPayload, BachecaSection } from "../types";
 
 const dateFmt = new Intl.DateTimeFormat("it-IT", {
   weekday: "short",
@@ -37,18 +38,20 @@ function EventCard({ e }: { e: BachecaSection["events"][number] }) {
 
 export default function Bacheca() {
   const { me } = useAuth();
-  const [sections, setSections] = useState<BachecaSection[] | null>(null);
+  const [payload, setPayload] = useState<BachecaPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api
-      .get<BachecaSection[]>("/api/bacheca")
-      .then(setSections)
+      .get<BachecaPayload>("/api/bacheca")
+      .then(setPayload)
       .catch((e: Error) => setError(e.message));
   }, []);
 
   if (error) return <p className="text-red-600">{error}</p>;
-  if (!sections) return <p className="text-gray-500">Caricamento bacheca…</p>;
+  if (!payload) return <p className="text-gray-500">Caricamento bacheca…</p>;
+
+  const { resources, eventSections } = payload;
 
   return (
     <div>
@@ -57,30 +60,48 @@ export default function Bacheca() {
       </h1>
       <p className="text-gray-500 mb-6">I tuoi prossimi impegni, organizzati per categoria.</p>
 
-      {sections.length === 0 && (
-        <div className="rounded-lg border border-dashed border-gray-300 p-10 text-center text-gray-500">
-          Nessun impegno in programma. Goditi la calma! 🌿
-        </div>
-      )}
+      <section className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-800 mb-3">Risorse condivise</h2>
+        {resources.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-gray-300 p-10 text-center text-gray-500">
+            Nessuna risorsa condivisa disponibile.
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {resources.map((resource) => (
+              <ResourceCard key={resource.id} resource={resource} />
+            ))}
+          </div>
+        )}
+      </section>
 
-      <div className="space-y-8">
-        {sections.map((s) => (
-          <section key={s.tag}>
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-800 mb-3">
-              <span
-                className="inline-block h-3 w-3 rounded-full"
-                style={{ backgroundColor: s.color ?? "#1d4ed8" }}
-              />
-              {s.tag}
-            </h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {s.events.map((e) => (
-                <EventCard key={`${s.tag}-${e.id}`} e={e} />
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
+      <section>
+        <h2 className="text-lg font-semibold text-gray-800 mb-3">Prossimi eventi</h2>
+        {eventSections.length === 0 && (
+          <div className="rounded-lg border border-dashed border-gray-300 p-10 text-center text-gray-500">
+            Nessun impegno in programma. Goditi la calma! 🌿
+          </div>
+        )}
+
+        <div className="space-y-8">
+          {eventSections.map((s) => (
+            <section key={s.tag}>
+              <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-800 mb-3">
+                <span
+                  className="inline-block h-3 w-3 rounded-full"
+                  style={{ backgroundColor: s.color ?? "#1d4ed8" }}
+                />
+                {s.tag}
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {s.events.map((e) => (
+                  <EventCard key={`${s.tag}-${e.id}`} e={e} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
