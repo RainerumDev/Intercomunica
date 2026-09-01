@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
+import { api } from "../api";
 import type { Subgroup } from "../types";
 import EmailComposer from "./EmailComposer";
 
@@ -24,7 +25,10 @@ function Harness() {
   );
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("EmailComposer dialog contract", () => {
   it("labels the modal, traps Tab, closes on Escape, and restores trigger focus", async () => {
@@ -48,5 +52,25 @@ describe("EmailComposer dialog contract", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it.each([
+    ["Tab", false, "Chiudi composizione email"],
+    ["Shift+Tab", true, "Annulla"],
+  ])("keeps %s contained when the focused Send button becomes disabled", async (_key, shift, expectedName) => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "post").mockReturnValue(new Promise(() => {}));
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Apri email" }));
+    await user.type(screen.getByPlaceholderText("Oggetto"), "Avviso");
+    await user.type(screen.getByPlaceholderText("Scrivi il messaggio…"), "Testo del messaggio");
+
+    const send = screen.getByRole("button", { name: "Invia" }) as HTMLButtonElement;
+    await user.click(send);
+    expect(send.disabled).toBe(true);
+    expect(document.activeElement).toBe(send);
+
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: shift });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: expectedName }));
   });
 });

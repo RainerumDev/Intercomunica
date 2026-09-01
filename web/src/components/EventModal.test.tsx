@@ -63,4 +63,19 @@ describe("EventModal dialog contract", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
+
+  it("gives each TAG removal control a localized tag-specific name", () => {
+    render(
+      <EventModal
+        draft={{ ...draft, tagNames: ["RIUNIONI"] }}
+        subgroups={[]}
+        knownTags={[]}
+        onSaved={() => {}}
+        onDeleted={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Rimuovi TAG RIUNIONI" })).toBeTruthy();
+  });
 });

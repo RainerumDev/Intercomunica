@@ -262,6 +262,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
                   {t}
                   {!readOnly && (
                     <button
+                      aria-label={`Rimuovi TAG ${t}`}
                       onClick={() => set("tagNames", form.tagNames.filter((x) => x !== t))}
                       className="text-purple-500 hover:text-purple-900"
                     >
