@@ -49,6 +49,12 @@ model User {
   calendarId     String?  @unique
   /// Last calendar summary applied on Google (rename detection)
   calendarName   String?
+  /// SHA-256 hash of the complete personal ICS feed path token.
+  calendarFeedTokenHash       String?   @unique
+  /// AES-256-GCM encrypted complete personal ICS feed path token.
+  calendarFeedTokenEnc        String?
+  calendarFeedTokenIssuedAt   DateTime?
+  calendarFeedLastFetchedAt   DateTime?
   birthDate      DateTime? // WIP B
   nameDay        String?   // WIP B: onomastico, "MM-DD" or free text
   createdAt      DateTime @default(now())
