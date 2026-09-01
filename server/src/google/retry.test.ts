@@ -3,6 +3,17 @@ import { withRetry, isCalendarUsageLimitError, isRetriableGoogleError } from "./
 
 const noSleep = () => Promise.resolve();
 
+function gaxios403(reason: string) {
+  return Object.assign(new Error(reason), {
+    status: 403,
+    response: {
+      data: {
+        error: { errors: [{ reason }] },
+      },
+    },
+  });
+}
+
 describe("isRetriableGoogleError", () => {
   it("retries 429 and 5xx", () => {
     for (const status of [429, 500, 502, 503, 504]) {
@@ -30,6 +41,17 @@ describe("isRetriableGoogleError", () => {
     expect(
       isCalendarUsageLimitError({ status: 403, errors: [{ reason: "forbidden" }] })
     ).toBe(false);
+  });
+
+  it("recognizes operational limits from Gaxios response payloads", () => {
+    for (const reason of [
+      "quotaExceeded",
+      "rateLimitExceeded",
+      "userRateLimitExceeded",
+    ]) {
+      expect(isCalendarUsageLimitError(gaxios403(reason))).toBe(true);
+    }
+    expect(isCalendarUsageLimitError(gaxios403("forbidden"))).toBe(false);
   });
 
   it("does not retry 4xx client errors or non-Google errors", () => {
@@ -62,6 +84,39 @@ describe("withRetry", () => {
     expect(result).toBe("ok");
     expect(calls).toBe(3);
     expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["rateLimitExceeded", "userRateLimitExceeded"])(
+    "retries Gaxios 403 %s responses",
+    async (reason) => {
+      const sleep = vi.fn(noSleep);
+      let calls = 0;
+      const result = await withRetry(
+        async () => {
+          calls++;
+          if (calls < 3) throw gaxios403(reason);
+          return "ok";
+        },
+        { sleep }
+      );
+
+      expect(result).toBe("ok");
+      expect(calls).toBe(3);
+      expect(sleep).toHaveBeenCalledTimes(2);
+    }
+  );
+
+  it("does not retry Gaxios quotaExceeded before retirement handles the operational stop", async () => {
+    let calls = 0;
+
+    await expect(
+      withRetry(async () => {
+        calls++;
+        throw gaxios403("quotaExceeded");
+      }, { sleep: noSleep })
+    ).rejects.toMatchObject({ status: 403 });
+
+    expect(calls).toBe(1);
   });
 
   it("applies exponential backoff", async () => {

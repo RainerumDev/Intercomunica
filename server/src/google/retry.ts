@@ -8,29 +8,43 @@ export interface RetryOptions {
 const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 const RATE_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded"]);
 
-export function isCalendarUsageLimitError(err: unknown): boolean {
-  if (typeof err !== "object" || err === null) return false;
-  const error = err as { status?: number; code?: number | string; errors?: { reason?: string }[] };
+interface GoogleApiError {
+  status?: number;
+  code?: number | string;
+  errors?: { reason?: string }[];
+  response?: {
+    status?: number;
+    data?: { error?: { errors?: { reason?: string }[] } };
+  };
+}
+
+function googleErrorDetails(err: unknown): { status?: number; reason?: string } {
+  if (typeof err !== "object" || err === null) return {};
+  const error = err as GoogleApiError;
   const status = typeof error.status === "number"
     ? error.status
     : typeof error.code === "number"
       ? error.code
-      : undefined;
+      : error.response?.status;
+  const reason =
+    error.response?.data?.error?.errors?.[0]?.reason ?? error.errors?.[0]?.reason;
+  return { status, reason };
+}
+
+export function isCalendarUsageLimitError(err: unknown): boolean {
+  const { status, reason } = googleErrorDetails(err);
   if (status === 429) return true;
   if (status !== 403) return false;
-  const reason = error.errors?.[0]?.reason;
   return reason === "quotaExceeded" || RATE_REASONS.has(reason ?? "");
 }
 
 /** Transient Google API failures worth retrying (rate limits, server errors). */
 export function isRetriableGoogleError(err: unknown): boolean {
-  if (typeof err !== "object" || err === null) return false;
-  const e = err as { status?: number; code?: number | string; errors?: { reason?: string }[] };
-  const status = typeof e.status === "number" ? e.status : typeof e.code === "number" ? e.code : undefined;
+  const { status, reason } = googleErrorDetails(err);
   if (status === undefined) return false;
   if (RETRIABLE_STATUSES.has(status)) return true;
   // Google signals per-user rate limits as 403 with a rate reason
-  if (status === 403) return RATE_REASONS.has(e.errors?.[0]?.reason ?? "");
+  if (status === 403) return RATE_REASONS.has(reason ?? "");
   return false;
 }
 

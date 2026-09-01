@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LegacyCalendarUser, RetirementDependencies } from "./syncService.js";
 import { retireLegacyCalendars, runFullSync } from "./syncService.js";
-import { isCalendarUsageLimitError } from "../google/retry.js";
+import { isCalendarUsageLimitError, withRetry } from "../google/retry.js";
 
 const db = vi.hoisted(() => ({
   syncLogCreate: vi.fn(),
@@ -46,6 +46,17 @@ const users: LegacyCalendarUser[] = [
   { id: "user-2", email: "seconda@rainerum.it", calendarId: "calendar-2" },
   { id: "user-3", email: "terza@rainerum.it", calendarId: "calendar-3" },
 ];
+
+function gaxios403(reason: string) {
+  return Object.assign(new Error(reason), {
+    status: 403,
+    response: {
+      data: {
+        error: { errors: [{ reason }] },
+      },
+    },
+  });
+}
 
 function dependencies(
   overrides: Partial<RetirementDependencies> = {}
@@ -122,27 +133,27 @@ describe("legacy personal calendar retirement", () => {
     ["429", Object.assign(new Error("too many requests"), { code: 429 })],
     [
       "403 quotaExceeded",
-      Object.assign(new Error("quota"), {
-        code: 403,
-        errors: [{ reason: "quotaExceeded" }],
-      }),
+      gaxios403("quotaExceeded"),
     ],
     [
       "403 rateLimitExceeded",
-      Object.assign(new Error("rate"), {
-        code: 403,
-        errors: [{ reason: "rateLimitExceeded" }],
-      }),
+      gaxios403("rateLimitExceeded"),
     ],
     [
       "403 userRateLimitExceeded",
-      Object.assign(new Error("user rate"), {
-        code: 403,
-        errors: [{ reason: "userRateLimitExceeded" }],
-      }),
+      gaxios403("userRateLimitExceeded"),
     ],
-  ])("stops on exhausted Google %s and leaves untouched users pending", async (_label, usageLimit) => {
-    const deleteCalendar = vi.fn().mockRejectedValueOnce(usageLimit);
+  ])("stops on exhausted Google %s and leaves untouched users pending", async (label, usageLimit) => {
+    let attempts = 0;
+    const deleteCalendar = vi.fn(() =>
+      withRetry(
+        async () => {
+          attempts++;
+          throw usageLimit;
+        },
+        { retries: 2, sleep: async () => undefined }
+      )
+    );
     const deps = dependencies({ deleteCalendar, isUsageLimit: isCalendarUsageLimitError });
 
     const result = await retireLegacyCalendars(users, deps);
@@ -155,6 +166,7 @@ describe("legacy personal calendar retirement", () => {
     expect(deps.finalizeUser).not.toHaveBeenCalled();
     expect(deleteCalendar).toHaveBeenCalledOnce();
     expect(deleteCalendar).not.toHaveBeenCalledWith("calendar-2");
+    expect(attempts).toBe(label === "403 quotaExceeded" ? 1 : 3);
   });
 
   it("retries a pending calendar on a later call", async () => {
@@ -231,5 +243,35 @@ describe("full synchronization retirement wiring", () => {
     expect(db.userUpdate).not.toHaveBeenCalled();
     expect(db.transaction).not.toHaveBeenCalled();
     expect(result.calendarsPending).toEqual(["pending@rainerum.it"]);
+  });
+
+  it("stops after an exhausted Gaxios rate limit without later deletion or local cleanup", async () => {
+    db.userFindMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "limited-user",
+          email: "limited@rainerum.it",
+          calendarId: "limited-calendar",
+        },
+        {
+          id: "untouched-user",
+          email: "untouched@rainerum.it",
+          calendarId: "untouched-calendar",
+        },
+      ]);
+    google.deleteCalendar.mockRejectedValue(gaxios403("rateLimitExceeded"));
+
+    const result = await runFullSync();
+
+    expect(google.deleteCalendar).toHaveBeenCalledOnce();
+    expect(google.deleteCalendar).not.toHaveBeenCalledWith("untouched-calendar");
+    expect(db.eventInstanceDeleteMany).not.toHaveBeenCalled();
+    expect(db.userUpdate).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(result.calendarsPending).toEqual([
+      "limited@rainerum.it",
+      "untouched@rainerum.it",
+    ]);
   });
 });
