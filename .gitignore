@@ -9,3 +9,4 @@ coverage/
 *.log
 .claude/ralph-loop.local.md
 .worktrees/
+.superpowers/
