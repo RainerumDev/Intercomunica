@@ -28,7 +28,7 @@ Round-two verification:
 
 Round-two screenshot:
 
-- `/private/tmp/prenotazioni-task4-review2/calendar-desktop-1440x900.png` — calendar captured at an exact 1440×900 viewport only after the cross-origin iframe body was visible and non-empty (1,816 rendered characters). Independent inspection reports MIME `image/png`, format `png`, width 1440, height 900, and SHA-1 `0a684e51a41af8a39b2656e3f2b5d3940c8cd53f`. The browser screenshot stream identified as JPEG despite its requested extension, so the captured pixels were converted and re-verified as a genuine PNG before acceptance.
+- `/private/tmp/prenotazioni-task4-review2/calendar-desktop-1440x900.png` — calendar captured at an exact 1440×900 viewport only after the cross-origin iframe body was visible and non-empty (1,816 rendered characters). Independent inspection reports MIME `image/png`, format `png`, width 1440, height 900, and SHA-1 `0a684e51a41af8a39b2656e3f2b5d3940c8cd53f`. This verified PNG is the final evidence artifact; the superseded JPEG stream is not part of the accepted evidence.
 
 The local development server and isolated database were stopped and the disposable database removed after verification. No deployment, dependency update, shared data, or production account was used.
 
