@@ -26,6 +26,8 @@ export function createApp(): express.Express {
   const app = express();
   app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
+  // Public bearer feeds must not depend on session cookies or their database lookup.
+  app.use("/calendar/feed", calendarFeedRouter);
   app.use(sessionMiddleware);
 
   app.get("/api/health", async (_req, res) => {
@@ -48,7 +50,6 @@ export function createApp(): express.Express {
   app.use("/api/bacheca", bachecaRouter);
   app.use("/api/wip", wipRouter);
   app.use("/api/calendar-links", calendarLinksRouter);
-  app.use("/calendar/feed", calendarFeedRouter);
 
   // production: serve the built frontend (SPA fallback for client routes)
   const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../web/dist");

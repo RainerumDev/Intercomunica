@@ -15,10 +15,12 @@ import {
   calendarLinksForUser,
   ensureUserFeedCredential,
   generalGoogleCalendarUrl,
+  isPersonalFeedEligible,
   rotateUserFeedCredential,
 } from "./calendarLinks.js";
 
 process.env.BASE_URL = "https://intercomunica.rainerum.delugan.net";
+process.env.ADMIN_EMAILS = "preside@rainerum.it";
 process.env.CALENDAR_EXCLUDED_EMAILS = "segreteria@rainerum.it";
 
 type StoredUser = {
@@ -92,6 +94,13 @@ describe("calendar subscription links", () => {
       lastFetchedAt: null,
     });
     expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("applies the active, inactive, admin-bypass, and excluded eligibility matrix", () => {
+    expect(isPersonalFeedEligible({ email: "teacher@rainerum.it", isActive: true })).toBe(true);
+    expect(isPersonalFeedEligible({ email: "teacher@rainerum.it", isActive: false })).toBe(false);
+    expect(isPersonalFeedEligible({ email: "preside@rainerum.it", isActive: false })).toBe(true);
+    expect(isPersonalFeedEligible({ email: "segreteria@rainerum.it", isActive: true })).toBe(false);
   });
 
   it("returns the same stored credential to concurrent first requests", async () => {

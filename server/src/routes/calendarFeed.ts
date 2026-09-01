@@ -35,6 +35,32 @@ function reportFeedStatus(status: 200 | 304 | 404 | 410 | 503): void {
   console.info(`calendar_feed status=${status}`);
 }
 
+/** GET uses weak entity-tag comparison for If-None-Match (RFC 9110 §13.1.2). */
+export function ifNoneMatchMatches(header: string | undefined, etag: string): boolean {
+  if (!header) return false;
+  let index = 0;
+
+  while (index < header.length) {
+    while (header[index] === " " || header[index] === "\t") index++;
+    if (header[index] === "*") return true;
+
+    if (header.slice(index, index + 2) === "W/") index += 2;
+    if (header[index] !== '"') return false;
+    const start = index++;
+    while (index < header.length && header[index] !== '"') index++;
+    if (index === header.length) return false;
+    const candidate = header.slice(start, ++index);
+    if (candidate === etag) return true;
+
+    while (header[index] === " " || header[index] === "\t") index++;
+    if (index === header.length) return false;
+    if (header[index] !== ",") return false;
+    index++;
+  }
+
+  return false;
+}
+
 calendarFeedRouter.get(
   "/:token.ics",
   h(async (req, res) => {
@@ -69,7 +95,7 @@ calendarFeedRouter.get(
         where: { id: user.id },
         data: { calendarFeedLastFetchedAt: new Date() },
       });
-      if (req.header("if-none-match") === etag) {
+      if (ifNoneMatchMatches(req.header("if-none-match"), etag)) {
         reportFeedStatus(304);
         res.status(304).end();
         return;

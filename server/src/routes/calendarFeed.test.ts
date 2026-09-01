@@ -168,6 +168,27 @@ describe("public calendar feed route", () => {
     expect(info).toHaveBeenCalledWith("calendar_feed status=304");
   });
 
+  it("uses weak If-None-Match comparison for lists, whitespace, and wildcards", async () => {
+    const routeHandler = handler(calendarFeedRouter, "/:token.ics", "get");
+    const first = await run(routeHandler, {
+      params: { token: "known-token" },
+      header: vi.fn(() => undefined),
+    });
+    const etag = (first.set.mock.calls[0]?.[0] as { ETag: string }).ETag;
+    const headers = [`W/${etag}`, `"previous", W/${etag}`, ` \t W/${etag} \t `, "*"];
+
+    for (const ifNoneMatch of headers) {
+      const res = await run(routeHandler, {
+        params: { token: "known-token" },
+        header: vi.fn(() => ifNoneMatch),
+      });
+      expect(res.status).toHaveBeenCalledWith(304);
+      expect(res.send).not.toHaveBeenCalled();
+    }
+
+    expect(prismaMock.user.update).toHaveBeenCalledTimes(headers.length + 1);
+  });
+
   it("returns a generic 503 when calendar generation fails", async () => {
     feedMock.loadPersonalCalendar.mockRejectedValue(new Error("database unavailable"));
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);

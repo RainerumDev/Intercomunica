@@ -97,7 +97,7 @@ function personalFeedUrls(token: string): Pick<CalendarLinksResponse, "personalI
   const personalIcsUrl = icsUrl.toString();
   return {
     personalIcsUrl,
-    personalWebcalUrl: personalIcsUrl.replace(/^https:/, "webcal:"),
+    personalWebcalUrl: new URL(personalIcsUrl.replace(/^https?:/, "webcal:")).toString(),
   };
 }
 
