@@ -75,6 +75,20 @@ export type ResourceRecord = {
   subgroupIds: string[];
 };
 
+export class ResourceNotFoundError extends Error {
+  constructor(readonly resourceId: string) {
+    super(`Resource ${resourceId} was not found`);
+    this.name = "ResourceNotFoundError";
+  }
+}
+
+export class InvalidResourceOrderError extends Error {
+  constructor() {
+    super("Resource order must contain every existing resource exactly once");
+    this.name = "InvalidResourceOrderError";
+  }
+}
+
 type ResourceCreateData = Omit<ResourceRecord, "id" | "createdAt" | "updatedAt">;
 type ResourceUpdateData = Partial<Omit<ResourceRecord, "id" | "createdAt" | "updatedAt">>;
 
@@ -105,7 +119,7 @@ function normalizeInput(input: SharedResourceInput): SharedResourceInput {
 }
 
 function requireResource(resource: ResourceRecord | null, id: string): ResourceRecord {
-  if (!resource) throw new Error(`Resource ${id} was not found`);
+  if (!resource) throw new ResourceNotFoundError(id);
   return resource;
 }
 
@@ -193,7 +207,7 @@ export function createSharedResourceService(
         const resources = await transaction.listResources();
         const existingIds = new Set(resources.map((resource) => resource.id));
         if (parsedIds.length !== resources.length || parsedIds.some((id) => !existingIds.has(id))) {
-          throw new Error("Resource order must contain every existing resource exactly once");
+          throw new InvalidResourceOrderError();
         }
 
         await Promise.all(parsedIds.map((id, sortOrder) => transaction.updateResource(id, { sortOrder })));

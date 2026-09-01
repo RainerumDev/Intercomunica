@@ -25,7 +25,12 @@ vi.mock("../services/linkPreview.js", async (importOriginal) => {
 
 import { SESSION_COOKIE, signSession } from "../auth/session.js";
 import { createApp } from "../index.js";
-import type { ResourceRecord, SharedResourceInput } from "../services/sharedResourceService.js";
+import {
+  InvalidResourceOrderError,
+  ResourceNotFoundError,
+  type ResourceRecord,
+  type SharedResourceInput,
+} from "../services/sharedResourceService.js";
 
 const resourceInput: SharedResourceInput = {
   url: "https://example.org/guide",
@@ -169,6 +174,20 @@ describe("admin resource routes", () => {
     });
   });
 
+  it("returns 404 when updating a missing resource", async () => {
+    resourceOperations.updateResource.mockRejectedValue(
+      new ResourceNotFoundError("resource-absent")
+    );
+
+    const response = await request(createApp())
+      .put("/api/admin/resources/resource-absent")
+      .set("Cookie", adminCookie())
+      .send(resourceInput);
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ error: "Risorsa non trovata" });
+  });
+
   it("deletes a resource and returns an acknowledgement", async () => {
     resourceOperations.deleteResource.mockResolvedValue(undefined);
 
@@ -179,6 +198,19 @@ describe("admin resource routes", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ ok: true });
     expect(resourceOperations.deleteResource).toHaveBeenCalledWith("resource-1");
+  });
+
+  it("returns 404 when deleting a missing resource", async () => {
+    resourceOperations.deleteResource.mockRejectedValue(
+      new ResourceNotFoundError("resource-absent")
+    );
+
+    const response = await request(createApp())
+      .delete("/api/admin/resources/resource-absent")
+      .set("Cookie", adminCookie());
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ error: "Risorsa non trovata" });
   });
 
   it("persists a validated complete order and returns ordered resources", async () => {
@@ -193,5 +225,19 @@ describe("admin resource routes", () => {
     expect(response.status).toBe(200);
     expect(response.body.map((item: ResourceRecord) => item.id)).toEqual(["resource-2", "resource-1"]);
     expect(resourceOperations.reorderResources).toHaveBeenCalledWith(["resource-2", "resource-1"]);
+  });
+
+  it("returns 409 when the submitted order is stale or incomplete", async () => {
+    resourceOperations.reorderResources.mockRejectedValue(
+      new InvalidResourceOrderError()
+    );
+
+    const response = await request(createApp())
+      .put("/api/admin/resources/order")
+      .set("Cookie", adminCookie())
+      .send({ resourceIds: ["resource-1"] });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({ error: "Ordine delle risorse non valido" });
   });
 });

@@ -241,6 +241,22 @@ describe("shared resources", () => {
       ["r1", 0], ["r3", 1],
     ]);
   });
+
+  it("classifies an update of a missing resource as a not-found domain error", async () => {
+    const service = resourceService(new FakeResourceRepository());
+
+    await expect(service.updateResource("missing", input)).rejects.toMatchObject({
+      name: "ResourceNotFoundError",
+    });
+  });
+
+  it("classifies deletion of a missing resource as a not-found domain error", async () => {
+    const service = resourceService(new FakeResourceRepository());
+
+    await expect(service.deleteResource("missing")).rejects.toMatchObject({
+      name: "ResourceNotFoundError",
+    });
+  });
 });
 
 describe("preview persistence", () => {
@@ -375,9 +391,13 @@ describe("reorderResources", () => {
       .toEqual([["r3", 0], ["r1", 1], ["r2", 2]]);
 
     const persisted = await repository.listResources();
-    await expect(service.reorderResources(["r3", "r1"])).rejects.toThrow();
+    await expect(service.reorderResources(["r3", "r1"])).rejects.toMatchObject({
+      name: "InvalidResourceOrderError",
+    });
     await expect(service.reorderResources(["r3", "r1", "r1"])).rejects.toThrow();
-    await expect(service.reorderResources(["r3", "r1", "foreign"])).rejects.toThrow();
+    await expect(service.reorderResources(["r3", "r1", "foreign"])).rejects.toMatchObject({
+      name: "InvalidResourceOrderError",
+    });
     expect(await repository.listResources()).toEqual(persisted);
   });
 

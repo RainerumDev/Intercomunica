@@ -1,12 +1,14 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { z } from "zod";
 import { requireAdmin } from "../auth/session.js";
 import { fetchLinkPreview } from "../services/linkPreview.js";
 import {
   createResource,
   deleteResource,
+  InvalidResourceOrderError,
   listAdminResources,
   reorderResources,
+  ResourceNotFoundError,
   resourceInputSchema,
   resourceOrderSchema,
   updateResource,
@@ -23,6 +25,18 @@ const previewSchema = z.object({
     }
   }, "Preview URL must use HTTP or HTTPS"),
 });
+
+function handleResourceError(error: unknown, res: Response): void {
+  if (error instanceof ResourceNotFoundError) {
+    res.status(404).json({ error: "Risorsa non trovata" });
+    return;
+  }
+  if (error instanceof InvalidResourceOrderError) {
+    res.status(409).json({ error: "Ordine delle risorse non valido" });
+    return;
+  }
+  throw error;
+}
 
 export const resourcesRouter = Router();
 
@@ -63,7 +77,11 @@ resourcesRouter.put(
   h(async (req, res) => {
     const body = parseBody(resourceOrderSchema, req, res);
     if (!body) return;
-    res.json(await reorderResources(body.resourceIds));
+    try {
+      res.json(await reorderResources(body.resourceIds));
+    } catch (error) {
+      handleResourceError(error, res);
+    }
   })
 );
 
@@ -72,14 +90,22 @@ resourcesRouter.put(
   h(async (req, res) => {
     const body = parseBody(resourceInputSchema, req, res);
     if (!body) return;
-    res.json(await updateResource(req.params.id, body));
+    try {
+      res.json(await updateResource(req.params.id, body));
+    } catch (error) {
+      handleResourceError(error, res);
+    }
   })
 );
 
 resourcesRouter.delete(
   "/:id",
   h(async (req, res) => {
-    await deleteResource(req.params.id);
-    res.json({ ok: true });
+    try {
+      await deleteResource(req.params.id);
+      res.json({ ok: true });
+    } catch (error) {
+      handleResourceError(error, res);
+    }
   })
 );
