@@ -2,16 +2,34 @@
 
 :root {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --brand: #b8181b;
+  --brand-hover: #8f1114;
+  --ink: #261816;
+  --muted: #6a5552;
+  --page: #fff8f7;
+  --surface: #ffffff;
+  --surface-soft: #fff0ee;
+  --line: #dbbeba;
+  --line-strong: #b8908c;
+  --focus: #004075;
+  --success: #1f7a4d;
+  --warning: #9a6200;
+  --danger: #a51d2d;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --shadow-sm: 0 1px 2px rgb(38 24 22 / 8%);
+  --shadow-md: 0 10px 30px rgb(85 49 43 / 8%);
 }
 
 /* FullCalendar tweaks to blend with Tailwind */
 .fc {
-  --fc-border-color: #e5e7eb;
-  --fc-today-bg-color: #eff6ff;
-  --fc-button-bg-color: #1d4ed8;
-  --fc-button-border-color: #1d4ed8;
-  --fc-button-hover-bg-color: #1e40af;
-  --fc-button-hover-border-color: #1e40af;
-  --fc-button-active-bg-color: #1e3a8a;
-  --fc-button-active-border-color: #1e3a8a;
+  --fc-border-color: var(--line);
+  --fc-today-bg-color: var(--surface-soft);
+  --fc-button-bg-color: var(--brand);
+  --fc-button-border-color: var(--brand);
+  --fc-button-hover-bg-color: var(--brand-hover);
+  --fc-button-hover-border-color: var(--brand-hover);
+  --fc-button-active-bg-color: var(--brand-hover);
+  --fc-button-active-border-color: var(--brand-hover);
 }
