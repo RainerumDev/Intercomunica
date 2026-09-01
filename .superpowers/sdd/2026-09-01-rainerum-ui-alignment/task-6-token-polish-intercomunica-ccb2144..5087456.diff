@@ -1,0 +1,13 @@
+diff --git a/docs/ui-guidelines.md b/docs/ui-guidelines.md
+index 2b8c2ee..c048d6d 100644
+--- a/docs/ui-guidelines.md
++++ b/docs/ui-guidelines.md
+@@ -5,7 +5,7 @@ Questa guida definisce il contratto visivo per le nuove superfici di Intercomuni
+ ## Identità e token
+ 
+ - Usare solo i marchi Rainerum ufficiali locali: `/rainerum-logo-full.png` nell'header desktop e `/rainerum-logo-mark.png` nell'header mobile. Non ridisegnarli, non sostituirli con testo e non caricarli da servizi esterni.
+-- Applicare i token istituzionali già presenti: `--brand: #b8181b`, `--brand-strong: #8f1114`, `--ink: #261816`, `--muted: #6a5552`, `--page: #fff8f7`, `--surface: #ffffff`, `--surface-soft: #fff0ee`, `--line: #dbbeba` e `--focus: #004075`. Mappare questi valori alle variabili consumate dall'app; non rinominare ogni consumatore senza motivo.
++- Applicare i token istituzionali già presenti: `--brand: #b8181b`, `--brand-hover: #8f1114`, `--ink: #261816`, `--muted: #6a5552`, `--page: #fff8f7`, `--surface: #ffffff`, `--surface-soft: #fff0ee`, `--line: #dbbeba` e `--focus: #004075`. Mappare questi valori alle variabili consumate dall'app; non rinominare ogni consumatore senza motivo.
+ - Il rosso istituzionale è l'unico accento di prodotto. Non introdurre colori propri di Intercomunica per pulsanti, navigazione, link, tab o superfici.
+ - I colori semantici restano separati dal brand: successo, avviso, errore, stati di disponibilità e colori che codificano dati (per esempio TAG o categorie calendario) devono restare riconoscibili e documentati come eccezioni di significato, non come identità di prodotto.
+ 

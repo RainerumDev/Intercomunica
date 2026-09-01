@@ -10,6 +10,16 @@
 
 Each independently deployed repository now has `docs/ui-guidelines.md`, linked prominently from its README. The guides make the local official full/compact marks and Rainerum token mapping the baseline; reserve institutional red for the product accent; and explicitly retain semantic status and data-encoding colours as meaning-bearing exceptions.
 
+## Token-name correction
+
+The token list in all three guides now names the existing canonical hover token `--brand-hover: #8f1114`, replacing the stale `--brand-strong` claim. Prenotazioni and Orario retain their already-existing local `--brand-dark: var(--brand-hover)` aliases; those aliases were not renamed or changed. No application CSS, component, dependency, or behavior changed.
+
+- Intercomunica follow-up: `5087456910a2dd3749899765147607f8a6375e34`, based on `ccb2144fe78caf651b9fab9f1c835810bf8e5f9d`.
+- Prenotazioni follow-up: `6044e964308d8e97d95a4e224f03cbd2771e21f1`, based on `116ecf0cfa018bc06eeee8b756d8051e48f6fea7`.
+- Orario follow-up: `dad8f99809d33745e471848d17943b6b17471223`, based on `b1d92ac86ed28898a1c6821acfd079a6147e7847`.
+
+The scoped packages `task-6-token-polish-intercomunica-ccb2144..5087456.diff` (13 lines, 1,613 bytes), `task-6-token-polish-prenotazioni-116ecf0..6044e96.diff` (13 lines, 1,569 bytes), and `task-6-token-polish-orario-b1d92ac..dad8f99.diff` (13 lines, 1,637 bytes) are byte-for-byte equal to their committed diffs. Each reverse-applies cleanly and its `git diff --check` passes.
+
 They make Lycoris the default for new compatible components and surfaces, require a pinned approved version, one root stylesheet import, thin framework-routing adapters, and reuse of current/vendored components rather than forks or copies. The practical checklist covers component selection, runtime/peer/registry/build/deploy compatibility, responsive layout, semantic HTML, keyboard focus, contrast, screen-reader labels, and behavior-preserving gates.
 
 ## Compatibility evidence
