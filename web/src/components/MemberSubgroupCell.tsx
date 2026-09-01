@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Member, Subgroup } from "../types";
+import { sortSubgroups } from "../subgroups";
+import SubgroupChip from "./SubgroupChip";
 
 interface Props {
   member: Member;
@@ -8,6 +10,7 @@ interface Props {
   isAdmin: boolean;
   onAdd: (member: Member, subgroupId: string) => void;
   onRemove: (member: Member, subgroupId: string) => void;
+  onInspect?: (subgroupId: string) => void;
 }
 
 /**
@@ -16,7 +19,7 @@ interface Props {
  * picker of the remaining subgroups. The picker is rendered in a portal with
  * fixed positioning so the surrounding table's overflow can't clip it.
  */
-export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAdd, onRemove }: Props) {
+export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAdd, onRemove, onInspect }: Props) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number }>({ top: 0, left: 0 });
@@ -27,7 +30,7 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
   const available = useMemo(() => {
     const inIds = new Set(member.subgroups.map((s) => s.id));
     const needle = q.trim().toLowerCase();
-    return allSubgroups
+    return sortSubgroups(allSubgroups)
       .filter((s) => !inIds.has(s.id))
       .filter((s) => !needle || s.name.toLowerCase().includes(needle));
   }, [allSubgroups, member.subgroups, q]);
@@ -80,22 +83,22 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
         <span className="text-xs text-gray-400">Nessun sottogruppo</span>
       )}
 
-      {member.subgroups.map((s) => (
-        <span
-          key={s.id}
-          className="inline-flex items-center gap-1 rounded-full bg-blue-100 border border-blue-300 text-blue-800 px-2.5 py-0.5 text-xs font-medium"
-        >
-          {s.name}
-          {isAdmin && (
+      {sortSubgroups(member.subgroups).map((s) => (
+        isAdmin ? (
+          <SubgroupChip key={s.id} subgroup={s}>
+            {s.name}
             <button
+              type="button"
               onClick={() => onRemove(member, s.id)}
               title={`Rimuovi da ${s.name}`}
-              className="text-blue-500 hover:text-blue-900 leading-none"
+              className="rounded-full leading-none opacity-70 hover:opacity-100 focus:outline-none focus:ring-1 focus:ring-current"
             >
               ×
             </button>
-          )}
-        </span>
+          </SubgroupChip>
+        ) : (
+          <SubgroupChip key={s.id} subgroup={s} interactive onClick={() => onInspect?.(s.id)} />
+        )
       ))}
 
       {isAdmin && (

@@ -37,4 +37,19 @@ describe("calendarExcludedEmails", () => {
     expect(usesPersonalCalendar("SEGRETERIA@RAINERUM.IT")).toBe(false);
     expect(usesPersonalCalendar("docente@rainerum.it")).toBe(true);
   });
+
+  it("bypasses group access for admins and calendar-excluded accounts", async () => {
+    process.env.ADMIN_EMAILS = "Presidenza@Rainerum.it";
+    process.env.CALENDAR_EXCLUDED_EMAILS = "segreteria@rainerum.it";
+    vi.resetModules();
+
+    const configModule = await import("./config.js");
+    const isAccessBypassEmail = (
+      configModule as typeof configModule & { isAccessBypassEmail: (email: string) => boolean }
+    ).isAccessBypassEmail;
+
+    expect(isAccessBypassEmail("presidenza@rainerum.it")).toBe(true);
+    expect(isAccessBypassEmail("SEGRETERIA@RAINERUM.IT")).toBe(true);
+    expect(isAccessBypassEmail("docente@rainerum.it")).toBe(false);
+  });
 });

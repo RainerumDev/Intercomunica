@@ -1,10 +1,12 @@
+import type { SubgroupRef } from "./subgroups";
+
 export interface Me {
   id: string;
   email: string;
   name: string | null;
   picture: string | null;
   role: "ADMIN" | "TEACHER";
-  subgroups: { id: string; name: string }[];
+  subgroups: SubgroupRef[];
 }
 
 export interface Member {
@@ -13,14 +15,12 @@ export interface Member {
   name: string | null;
   role: "ADMIN" | "TEACHER";
   hasCalendar: boolean;
-  subgroups: { id: string; name: string }[];
+  subgroups: SubgroupRef[];
 }
 
-export interface Subgroup {
-  id: string;
-  name: string;
+export interface Subgroup extends SubgroupRef {
   description: string | null;
-  folder?: string | null;
+  color: string | null;
   members: { id: string; email: string; name: string | null }[];
 }
 

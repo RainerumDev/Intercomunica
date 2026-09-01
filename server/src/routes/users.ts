@@ -26,6 +26,26 @@ export function buildDirectoryWhere(
   return where;
 }
 
+type DirectoryUser = Prisma.UserGetPayload<{
+  include: { subgroups: { include: { subgroup: true } } };
+}>;
+
+export function serializeDirectoryUser(user: DirectoryUser) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    hasCalendar: Boolean(user.calendarId),
+    subgroups: user.subgroups.map((membership) => ({
+      id: membership.subgroup.id,
+      name: membership.subgroup.name,
+      folder: membership.subgroup.folder,
+      color: membership.subgroup.color,
+    })),
+  };
+}
+
 /**
  * Flusso 2.2 — anagrafica: full member list with subgroup memberships.
  * Search (?q=) matches name, email or subgroup name.
@@ -41,15 +61,6 @@ usersRouter.get(
       include: { subgroups: { include: { subgroup: true } } },
       orderBy: [{ name: "asc" }, { email: "asc" }],
     });
-    res.json(
-      users.map((u) => ({
-        id: u.id,
-        email: u.email,
-        name: u.name,
-        role: u.role,
-        hasCalendar: Boolean(u.calendarId),
-        subgroups: u.subgroups.map((m) => ({ id: m.subgroup.id, name: m.subgroup.name })),
-      }))
-    );
+    res.json(users.map(serializeDirectoryUser));
   })
 );

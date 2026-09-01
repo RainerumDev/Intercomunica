@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, ApiError } from "./api";
+import { api, ApiError, onUnauthorized } from "./api";
 import type { Me } from "./types";
 
 interface AuthState {
@@ -30,7 +30,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    const unsubscribe = onUnauthorized(() => setMe(null));
     refresh().finally(() => setLoading(false));
+    return unsubscribe;
   }, []);
 
   const logout = async () => {

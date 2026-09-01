@@ -33,6 +33,10 @@ authRouter.get(
       return;
     }
     const user = await upsertLoginUser(profile);
+    if (!user) {
+      res.redirect(`${config().WEB_URL}/login?error=group`);
+      return;
+    }
     setSessionCookie(res, user);
     res.redirect(config().WEB_URL);
   })
@@ -63,7 +67,12 @@ authRouter.get(
       name: user.name,
       picture: user.picture,
       role: user.role,
-      subgroups: user.subgroups.map((m) => ({ id: m.subgroup.id, name: m.subgroup.name })),
+      subgroups: user.subgroups.map((m) => ({
+        id: m.subgroup.id,
+        name: m.subgroup.name,
+        folder: m.subgroup.folder,
+        color: m.subgroup.color,
+      })),
     });
   })
 );

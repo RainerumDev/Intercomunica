@@ -9,6 +9,13 @@ export class ApiError extends Error {
   }
 }
 
+const unauthorizedListeners = new Set<() => void>();
+
+export function onUnauthorized(listener: () => void): () => void {
+  unauthorizedListeners.add(listener);
+  return () => unauthorizedListeners.delete(listener);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     credentials: "same-origin",
@@ -24,6 +31,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       code = data.code;
     } catch {
       /* non-JSON body */
+    }
+    if (res.status === 401) {
+      unauthorizedListeners.forEach((listener) => listener());
     }
     throw new ApiError(res.status, message, code);
   }

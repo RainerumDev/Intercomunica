@@ -4,6 +4,9 @@ import { useAuth } from "../auth";
 import type { Member, Subgroup } from "../types";
 import EmailComposer from "../components/EmailComposer";
 import MemberSubgroupCell from "../components/MemberSubgroupCell";
+import SubgroupChip from "../components/SubgroupChip";
+import SubgroupDetailsModal from "../components/SubgroupDetailsModal";
+import { normalizeColorOverride, sortMembers, sortSubgroups } from "../subgroups";
 
 export default function Directory() {
   const { me } = useAuth();
@@ -13,6 +16,7 @@ export default function Directory() {
   const [q, setQ] = useState("");
   const [subgroupQ, setSubgroupQ] = useState("");
   const [emailTarget, setEmailTarget] = useState<Subgroup | null>(null);
+  const [selectedSubgroup, setSelectedSubgroup] = useState<Subgroup | null>(null);
   const [newSubgroup, setNewSubgroup] = useState("");
   const [newFolder, setNewFolder] = useState("");
   const [editingSubgroup, setEditingSubgroup] = useState<Subgroup | null>(null);
@@ -62,7 +66,7 @@ export default function Directory() {
 
   const groupedSubgroups = useMemo(() => {
     const groups: Record<string, Subgroup[]> = {};
-    filteredSubgroups.forEach(s => {
+    sortSubgroups(filteredSubgroups).forEach(s => {
       const folder = s.folder?.trim() || "Generale";
       if (!groups[folder]) groups[folder] = [];
       groups[folder].push(s);
@@ -105,7 +109,11 @@ export default function Directory() {
   const updateSubgroup = async (s: Subgroup) => {
     setError(null);
     try {
-      await api.put(`/api/subgroups/${s.id}`, { name: s.name.trim(), folder: s.folder?.trim() || null });
+      await api.put(`/api/subgroups/${s.id}`, {
+        name: s.name.trim(),
+        folder: s.folder?.trim() || null,
+        color: normalizeColorOverride(s.color),
+      });
       setEditingSubgroup(null);
       await reload();
     } catch (e) {
@@ -169,20 +177,21 @@ export default function Directory() {
           />
         </div>
         <div className="space-y-6">
-          {Object.entries(groupedSubgroups).sort().map(([folder, list]) => (
+          {Object.entries(groupedSubgroups).map(([folder, list]) => (
             <div key={folder}>
               <h3 className="text-md font-bold text-gray-700 mb-2 border-b pb-1">{folder}</h3>
               <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
                 {list.map((s) => (
                   <div key={s.id} className="flex flex-col justify-between rounded border border-gray-200 bg-white p-2.5 hover:shadow-sm transition-shadow">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="truncate flex-1">
-                        <h4 className="text-sm font-medium text-gray-900 truncate" title={s.name}>{s.name}</h4>
-                        <p className="text-xs text-gray-500">{s.members.length} membri</p>
-                      </div>
-                      {isAdmin && (
+                    {isAdmin ? (
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <SubgroupChip subgroup={s} />
+                          <p className="mt-1 text-xs text-gray-500">{s.members.length} membri</p>
+                        </div>
                         <div className="flex items-center gap-2 shrink-0 mt-0.5">
                           <button
+                            type="button"
                             onClick={() => setEditingSubgroup(s)}
                             title="Modifica sottogruppo"
                             className="text-gray-400 hover:text-blue-600"
@@ -190,6 +199,7 @@ export default function Directory() {
                             <EditIcon />
                           </button>
                           <button
+                            type="button"
                             onClick={() => deleteSubgroup(s)}
                             title="Elimina sottogruppo"
                             className="text-gray-400 hover:text-red-600"
@@ -197,15 +207,28 @@ export default function Directory() {
                             <TrashIcon />
                           </button>
                         </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => setEmailTarget(s)}
-                      disabled={s.members.length === 0}
-                      className="mt-2.5 w-full rounded border border-blue-600 text-blue-700 px-2 py-1 text-xs font-medium hover:bg-blue-50 disabled:opacity-40"
-                    >
-                      ✉️ Invia Email
-                    </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSubgroup(s)}
+                        className="w-full rounded-md p-1 text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        aria-label={`Mostra i membri di ${s.name}`}
+                      >
+                        <SubgroupChip subgroup={s} />
+                        <p className="mt-1 text-xs text-gray-500">{s.members.length} membri</p>
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => setEmailTarget(s)}
+                        disabled={s.members.length === 0}
+                        className="mt-2.5 w-full rounded border border-blue-600 text-blue-700 px-2 py-1 text-xs font-medium hover:bg-blue-50 disabled:opacity-40"
+                      >
+                        ✉️ Invia Email
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -289,6 +312,10 @@ export default function Directory() {
                       isAdmin={isAdmin}
                       onAdd={addMembership}
                       onRemove={removeMembership}
+                      onInspect={(subgroupId) => {
+                        const subgroup = subgroups.find((entry) => entry.id === subgroupId);
+                        if (subgroup) setSelectedSubgroup(subgroup);
+                      }}
                     />
                   </td>
                 </tr>
@@ -304,6 +331,17 @@ export default function Directory() {
           </table>
         </div>
       </section>
+
+      {selectedSubgroup && (
+        <SubgroupDetailsModal
+          subgroup={selectedSubgroup}
+          onClose={() => setSelectedSubgroup(null)}
+          onEmail={() => {
+            setEmailTarget(selectedSubgroup);
+            setSelectedSubgroup(null);
+          }}
+        />
+      )}
 
       {emailTarget && <EmailComposer subgroup={emailTarget} onClose={() => setEmailTarget(null)} />}
 
@@ -325,11 +363,37 @@ export default function Directory() {
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 list="folders"
               />
+
+              <div className="rounded-lg border border-gray-200 p-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Colore etichetta</p>
+                    <p className="text-xs text-gray-500">{editingSubgroup.color ? "Personalizzato" : "Automatico dal nome"}</p>
+                  </div>
+                  <input
+                    type="color"
+                    value={editingSubgroup.color ?? "#1D4ED8"}
+                    onChange={(e) => setEditingSubgroup({ ...editingSubgroup, color: e.target.value.toUpperCase() })}
+                    aria-label="Colore del sottogruppo"
+                    className="h-10 w-14 cursor-pointer rounded border border-gray-300 bg-white p-1"
+                  />
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <SubgroupChip subgroup={editingSubgroup} />
+                  <button
+                    type="button"
+                    onClick={() => setEditingSubgroup({ ...editingSubgroup, color: null })}
+                    className="text-xs font-medium text-blue-700 hover:text-blue-900"
+                  >
+                    Usa colore automatico
+                  </button>
+                </div>
+              </div>
               
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <h3 className="text-sm font-semibold text-gray-700 mb-2">Membri del gruppo</h3>
                 <div className="max-h-60 overflow-y-auto space-y-1 pr-2 text-sm">
-                  {editingSubgroup.members.map(m => (
+                  {sortMembers(editingSubgroup.members).map(m => (
                     <div key={m.id} className="flex justify-between items-center py-1">
                       <span className="truncate" title={m.email}>{m.name || m.email}</span>
                       <button onClick={() => handleModalRemoveMember(m.id)} className="text-red-600 hover:text-red-800 ml-2 shrink-0">Rimuovi</button>

@@ -62,3 +62,8 @@ export function calendarExcludedEmails(): Set<string> {
 export function usesPersonalCalendar(email: string): boolean {
   return !calendarExcludedEmails().has(email.trim().toLowerCase());
 }
+
+export function isAccessBypassEmail(email: string): boolean {
+  const normalized = email.trim().toLowerCase();
+  return adminEmails().has(normalized) || calendarExcludedEmails().has(normalized);
+}

@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import type { Request, Response, NextFunction } from "express";
-import { config, adminEmails } from "../config.js";
+import { config, adminEmails, isAccessBypassEmail } from "../config.js";
 import { prisma } from "../db.js";
 
 export const SESSION_COOKIE = "intercomunica_session";
@@ -51,12 +51,31 @@ export function verifySession(token: string): SessionUser | null {
   }
 }
 
-/** Attach req.user when a valid session cookie is present. */
-export function sessionMiddleware(req: Request, _res: Response, next: NextFunction): void {
+export function canAccessApp(email: string, isActive: boolean | undefined): boolean {
+  return isAccessBypassEmail(email) || isActive === true;
+}
+
+/** Attach req.user when the signed session still belongs to an authorized user. */
+export async function sessionMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = req.cookies?.[SESSION_COOKIE];
   if (typeof token === "string") {
-    const user = verifySession(token);
-    if (user) req.user = user;
+    const session = verifySession(token);
+    if (session) {
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: session.id },
+          select: { id: true, email: true, role: true, isActive: true },
+        });
+        if (user && canAccessApp(user.email, user.isActive)) {
+          req.user = { id: user.id, email: user.email, role: user.role };
+        } else {
+          clearSessionCookie(res);
+        }
+      } catch (err) {
+        next(err);
+        return;
+      }
+    }
   }
   next();
 }
@@ -92,9 +111,10 @@ export async function upsertLoginUser(profile: {
   email: string;
   name?: string;
   picture?: string;
-}): Promise<SessionUser> {
+}): Promise<SessionUser | null> {
   const email = profile.email.toLowerCase();
   const existing = await prisma.user.findUnique({ where: { email } });
+  if (!canAccessApp(email, existing?.isActive)) return null;
   const role = roleForEmail(email, existing?.role);
   const user = await prisma.user.upsert({
     where: { email },

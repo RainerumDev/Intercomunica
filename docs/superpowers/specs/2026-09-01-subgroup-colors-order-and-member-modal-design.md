@@ -28,7 +28,7 @@ Automatic colors use a stable string hash mapped into HSL:
 - hue spans the full 0–359° circle;
 - saturation and lightness use bounded hash-derived bands that remain visually strong without becoming neon or muddy;
 - the result is converted to an RGB/hex background;
-- foreground is selected between a dark ink and white using relative luminance and WCAG contrast ratio.
+- foreground is selected between a dark ink and white using relative luminance and WCAG contrast ratio, with pure black as a safe fallback for rare mid-tone overrides.
 
 Manual `#RRGGBB` overrides use the same foreground-selection logic. The utility returns background, foreground, and border colors. It has no storage or browser dependency, making deterministic output and contrast directly testable. Renaming changes an automatic color but never a manual override.
 
@@ -88,6 +88,19 @@ Invalid color values are rejected by the existing request-validation path. API f
 
 Clickable chips and cards use native buttons with visible focus styles and descriptive labels. The modal uses dialog semantics, an accessible title, Escape dismissal, and restores the normal page flow on close. Color is decorative: names and member counts remain textual, and foreground selection protects readability.
 
+## Group-based access control
+
+Login eligibility uses the membership state imported by the latest successful main-group synchronization:
+
+- active users may log in;
+- addresses in `ADMIN_EMAILS` bypass membership checks;
+- addresses in `CALENDAR_EXCLUDED_EMAILS` bypass membership checks;
+- every other missing or inactive user is rejected with a dedicated `login?error=group` redirect and a clear Italian message.
+
+Regular login must no longer create arbitrary domain users. Bypass accounts may still be created or refreshed at login. No live Google membership request is made during OAuth, so authentication remains available when Google directory APIs are temporarily unavailable and its source of truth is explicit: the last completed synchronization.
+
+Every authenticated request revalidates the session subject against the database. A regular user remains authorized only while `isActive` is true; bypass addresses remain authorized. Consequently, a group synchronization that deactivates a removed member invalidates that member’s existing session on the next page or API request, even though the signed cookie has not expired. Rejected cookies are cleared when practical and protected endpoints return `401`. The shared frontend API client broadcasts every `401` to the authentication provider, which clears its local user immediately and returns the interface to the login screen without requiring a manual reload.
+
 ## Verification
 
 Add focused tests for:
@@ -97,6 +110,10 @@ Add focused tests for:
 - deterministic automatic color and readable foreground for automatic and manual backgrounds;
 - folder/name sorting without input mutation;
 - `/api/users` subgroup payload including `folder` and `color`;
-- modal member ordering and transition to the existing email composer where economical with the current test stack.
+- modal member ordering through the pure sorter, plus frontend typecheck/build proof for the email-composer handoff without adding a DOM-test dependency;
+- login acceptance for active members and both bypass lists;
+- login rejection for missing/inactive regular users;
+- immediate rejection of an existing session after its regular user becomes inactive.
+- immediate frontend session clearing when any protected API request returns `401`.
 
 Run the complete server tests, workspace typecheck, production build, and a focused UI inspection. Commit implementation separately from the already committed service-account exclusion work, then push both commits to the current `main` branch.

@@ -12,6 +12,8 @@ export default function Login() {
           <p className="mb-4 rounded bg-red-50 text-red-700 px-3 py-2 text-sm">
             {error === "domain"
               ? "Accesso consentito solo con l'account istituzionale della scuola."
+              : error === "group"
+                ? "Account non appartenente al gruppo autorizzato."
               : "Accesso non riuscito. Riprova."}
           </p>
         )}
