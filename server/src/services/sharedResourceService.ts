@@ -1,6 +1,7 @@
 import { PrismaClient, type SharedResource, type SharedResourceSubgroup } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../db.js";
+import { fetchLinkPreview, type LinkPreview } from "./linkPreview.js";
 
 export type SharedResourceInput = {
   url: string;
@@ -108,23 +109,49 @@ function requireResource(resource: ResourceRecord | null, id: string): ResourceR
   return resource;
 }
 
-export function createSharedResourceService(repository: SharedResourceRepository) {
+async function fetchedPreviewData(
+  input: SharedResourceInput,
+  fetchPreview: (url: string) => Promise<LinkPreview>
+): Promise<Pick<ResourceCreateData, "previewImageUrl" | "previewSiteName" | "previewFetchedAt">> {
+  if (!input.previewEnabled) {
+    return { previewImageUrl: null, previewSiteName: null, previewFetchedAt: null };
+  }
+
+  try {
+    const preview = await fetchPreview(input.url);
+    return {
+      previewImageUrl: preview.imageUrl,
+      previewSiteName: preview.siteName,
+      previewFetchedAt: new Date(),
+    };
+  } catch {
+    return { previewImageUrl: null, previewSiteName: null, previewFetchedAt: null };
+  }
+}
+
+export function createSharedResourceService(
+  repository: SharedResourceRepository,
+  fetchPreview: (url: string) => Promise<LinkPreview> = fetchLinkPreview
+) {
   return {
     async createResource(input: SharedResourceInput): Promise<ResourceRecord> {
       const normalized = normalizeInput(input);
+      const preview = await fetchedPreviewData(normalized, fetchPreview);
       return repository.transaction(async (transaction) => {
         const currentResources = await transaction.listResources();
         const sortOrder = Math.max(-1, ...currentResources.map((resource) => resource.sortOrder)) + 1;
-        return transaction.createResource({ ...resourceData(normalized, null), sortOrder });
+        return transaction.createResource({ ...resourceData(normalized, preview.previewFetchedAt), ...preview, sortOrder });
       });
     },
 
     async updateResource(id: string, input: SharedResourceInput): Promise<ResourceRecord> {
       const normalized = normalizeInput(input);
+      const preview = await fetchedPreviewData(normalized, fetchPreview);
       return repository.transaction(async (transaction) => {
         const current = requireResource(await transaction.findResource(id), id);
         return transaction.updateResource(id, {
-          ...resourceData(normalized, normalized.previewEnabled ? current.previewFetchedAt : null),
+          ...resourceData(normalized, preview.previewFetchedAt),
+          ...preview,
           sortOrder: current.sortOrder,
         });
       });

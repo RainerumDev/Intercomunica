@@ -6,6 +6,7 @@ import {
   type ResourceRecord,
   type SharedResourceRepository,
 } from "./sharedResourceService.js";
+import type { LinkPreview } from "./linkPreview.js";
 
 const baseTime = new Date("2026-09-01T09:00:00.000Z");
 
@@ -120,6 +121,21 @@ const input = {
   subgroupIds: ["g1"],
 };
 
+const previewWithoutMetadata = async (url: string): Promise<LinkPreview> => ({
+  finalUrl: url,
+  title: null,
+  description: null,
+  imageUrl: null,
+  siteName: null,
+});
+
+function resourceService(
+  repository: SharedResourceRepository,
+  fetchPreview = previewWithoutMetadata
+) {
+  return createSharedResourceService(repository, fetchPreview);
+}
+
 describe("resourceInputSchema", () => {
   it("trims titles at the accepted length bounds", () => {
     expect(resourceInputSchema.parse({ ...input, title: "  A  " }).title).toBe("A");
@@ -162,7 +178,7 @@ describe("shared resources", () => {
       resource({ id: "r-first", isGlobal: true, sortOrder: 0 }),
     ]);
     repository.userSubgroups.set("teacher-1", ["g1"]);
-    const service = createSharedResourceService(repository);
+    const service = resourceService(repository);
 
     expect((await service.listResourcesForUser("teacher-1")).map((item) => item.id)).toEqual([
       "r-first", "r-g1-first", "r-g1-later", "r-global",
@@ -174,7 +190,7 @@ describe("shared resources", () => {
 
   it("persists normalized targets and assigns the next sort position on creation", async () => {
     const repository = new FakeResourceRepository([resource({ id: "r1", sortOrder: 4 })]);
-    const service = createSharedResourceService(repository);
+    const service = resourceService(repository);
 
     const created = await service.createResource({ ...input, subgroupIds: ["g1", "g1", "g2"] });
 
@@ -194,7 +210,7 @@ describe("shared resources", () => {
         previewFetchedAt: new Date("2026-09-01T09:15:00.000Z"),
       }),
     ]);
-    const service = createSharedResourceService(repository);
+    const service = resourceService(repository);
 
     const updated = await service.updateResource("r1", {
       ...input,
@@ -217,13 +233,130 @@ describe("shared resources", () => {
       resource({ id: "r2", sortOrder: 3 }),
       resource({ id: "r3", sortOrder: 9 }),
     ]);
-    const service = createSharedResourceService(repository);
+    const service = resourceService(repository);
 
     await service.deleteResource("r2");
 
     expect((await repository.listResources()).map((item) => [item.id, item.sortOrder])).toEqual([
       ["r1", 0], ["r3", 1],
     ]);
+  });
+});
+
+describe("preview persistence", () => {
+  it("persists secure preview provenance and a fetched timestamp instead of caller metadata", async () => {
+    const repository = new FakeResourceRepository();
+    const service = resourceService(repository, async () => ({
+      finalUrl: "https://preview.example.org/article",
+      title: "Preview title",
+      description: "Preview description",
+      imageUrl: "https://cdn.example.org/trusted-image.png",
+      siteName: "Trusted site",
+    }));
+    const beforeCreate = Date.now();
+
+    const created = await service.createResource({
+      ...input,
+      title: "Manual title",
+      description: "Manual description",
+      previewImageUrl: "https://attacker.example.org/spoof.png",
+      previewSiteName: "Spoofed site",
+    });
+
+    expect(created).toMatchObject({
+      title: "Manual title",
+      description: "Manual description",
+      previewImageUrl: "https://cdn.example.org/trusted-image.png",
+      previewSiteName: "Trusted site",
+    });
+    expect(created.previewFetchedAt).toBeInstanceOf(Date);
+    expect(created.previewFetchedAt?.getTime()).toBeGreaterThanOrEqual(beforeCreate);
+    expect(repository.resources[0]).toMatchObject({
+      previewImageUrl: "https://cdn.example.org/trusted-image.png",
+      previewSiteName: "Trusted site",
+    });
+  });
+
+  it("refreshes persisted preview metadata and timestamp when an enabled resource URL changes", async () => {
+    const oldFetchedAt = new Date("2026-09-01T09:15:00.000Z");
+    const repository = new FakeResourceRepository([
+      resource({
+        id: "r1",
+        url: "https://example.org/old",
+        previewImageUrl: "https://cdn.example.org/old.png",
+        previewSiteName: "Old site",
+        previewFetchedAt: oldFetchedAt,
+      }),
+    ]);
+    const service = resourceService(repository, async (url) => ({
+      finalUrl: url,
+      title: null,
+      description: null,
+      imageUrl: "https://cdn.example.org/new.png",
+      siteName: "New site",
+    }));
+
+    const updated = await service.updateResource("r1", {
+      ...input,
+      url: "https://example.org/new",
+      previewImageUrl: "https://attacker.example.org/spoof.png",
+      previewSiteName: "Spoofed site",
+    });
+
+    expect(updated).toMatchObject({
+      url: "https://example.org/new",
+      previewImageUrl: "https://cdn.example.org/new.png",
+      previewSiteName: "New site",
+    });
+    expect(updated.previewFetchedAt).toBeInstanceOf(Date);
+    expect(updated.previewFetchedAt?.getTime()).toBeGreaterThan(oldFetchedAt.getTime());
+  });
+
+  it("saves manual content with no preview state when secure preview fetching fails", async () => {
+    const repository = new FakeResourceRepository();
+    const service = resourceService(repository, async () => {
+      throw new Error("preview fetch failed");
+    });
+
+    const created = await service.createResource({
+      ...input,
+      title: "Manual title",
+      description: "Manual description",
+      previewImageUrl: "https://attacker.example.org/spoof.png",
+      previewSiteName: "Spoofed site",
+    });
+
+    expect(created).toMatchObject({
+      title: "Manual title",
+      description: "Manual description",
+      previewImageUrl: null,
+      previewSiteName: null,
+      previewFetchedAt: null,
+    });
+    expect(repository.resources[0]).toMatchObject({
+      previewImageUrl: null,
+      previewSiteName: null,
+      previewFetchedAt: null,
+    });
+  });
+
+  it("uses the default secure preview fetcher before persisting an unsafe URL", async () => {
+    const repository = new FakeResourceRepository();
+    const service = createSharedResourceService(repository);
+
+    const created = await service.createResource({
+      ...input,
+      url: "http://127.0.0.1/private",
+      previewImageUrl: "https://attacker.example.org/spoof.png",
+      previewSiteName: "Spoofed site",
+    });
+
+    expect(created).toMatchObject({
+      url: "http://127.0.0.1/private",
+      previewImageUrl: null,
+      previewSiteName: null,
+      previewFetchedAt: null,
+    });
   });
 });
 
@@ -234,7 +367,7 @@ describe("reorderResources", () => {
       resource({ id: "r2", sortOrder: 0 }),
       resource({ id: "r3", sortOrder: 1 }),
     ]);
-    const service = createSharedResourceService(repository);
+    const service = resourceService(repository);
 
     await service.reorderResources(["r3", "r1", "r2"]);
     expect((await repository.listResources()).sort((left, right) => left.sortOrder - right.sortOrder)
