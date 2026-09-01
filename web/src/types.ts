@@ -62,6 +62,32 @@ export interface BachecaSection {
   }[];
 }
 
+export interface SharedResource {
+  id: string;
+  url: string;
+  title: string;
+  description: string | null;
+  previewEnabled: boolean;
+  previewImageUrl: string | null;
+  previewSiteName: string | null;
+  previewFetchedAt: string | null;
+  isGlobal: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  subgroupIds: string[];
+}
+
+export type SharedResourceDraft = Omit<
+  SharedResource,
+  "id" | "previewFetchedAt" | "sortOrder" | "createdAt" | "updatedAt"
+>;
+
+export interface BachecaPayload {
+  resources: SharedResource[];
+  eventSections: BachecaSection[];
+}
+
 export interface AdminConfig {
   masterConnected: boolean;
   masterEmail: string | null;
