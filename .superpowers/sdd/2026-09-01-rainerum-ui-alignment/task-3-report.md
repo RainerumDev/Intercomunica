@@ -7,13 +7,14 @@
 - Implementation commit: `053cf0effba1266c889b95b973f55c8882e7d01a` (`style(ui): align Intercomunica with Rainerum portal`).
 - Review-fix commit: `4848f77353591732b0acd840b38957a323e3616a` (`fix(ui): prevent compact portal overflow`).
 - Accessibility review-fix commit: `05cab5a17da88d145e64d872e405f303dcadbaaf` (`fix(ui): harden compact pickers and dialogs`).
+- Focus-containment review-fix commit: `7ecb1d155b1c1089792da47ac7c718723e33a053` (`fix(ui): retain dialog focus during pending actions`).
 - Baseline: `332cd394ae5c71572d6e223dac5451e0839ac1f9`.
 
 The authenticated shell now uses the official full Rainerum logo on desktop and compact official mark below 768 px, retains `Intercomunica` as the service identifier, exposes a skip link and labelled primary navigation, preserves `NavLink` active-route semantics, and keeps the existing user, role, and logout controls. The public login shell uses the same responsive mark hierarchy and institutional red action.
 
 Focused portal classes in `web/src/index.css` cover the existing page headings, cards, form controls, buttons, feedback, tabs, tables, dialogs, resource/event cards, empty/loading/error states, FullCalendar controls, focus treatment, and responsive navigation. Bacheca, Calendar, Directory, Admin Settings, shared-resource list/editor, and the existing modal/picker children use those classes. The remaining literal blue event/category values are unchanged data-encoding colors, not product accents.
 
-No route, redirect, role condition, API path, callback, state/effect, form value, label, workflow, dependency, React version, or data behavior changed. No Lycoris dependency, deployment, or production migration was introduced.
+No route, redirect, role condition, API path, business/data callback, business/data state or effect, form value, workflow, dependency, React version, or data behavior changed. The only new effect is DOM-scoped keyboard/focus management for the existing dialogs, including focus restoration. No Lycoris dependency, deployment, or production migration was introduced.
 
 ## Test-first and review evidence
 
@@ -23,6 +24,8 @@ The independent review of `332cd394..053cf0e` identified a suppressed skip-targe
 
 Review fix round 1 clamps the fixed-position member subgroup picker to 8 px viewport gutters and caps it at `calc(100vw - 1rem)`. Event, email-composer, and subgroup-editor modals now expose labelled modal-dialog semantics, localized close-button names, initial focus, Escape dismissal, contained Tab navigation, and trigger-focus restoration through one small shared hook. Four red-first component/page tests cover the 390 px picker boundary and the retained dialog contracts. All reviewed `text-gray-400` hints in Task 3-touched production TSX now use the approved `--muted` field-hint treatment; close controls use the institutional action color.
 
+Review fix round 2 treats an active element that is no longer in the current focusable list as outside the valid dialog focus cycle. This keeps both Tab and Shift+Tab contained when a focused Send or Save control becomes disabled during an async pending state. The pre-existing event TAG removal button now exposes the localized tag-specific name `Rimuovi TAG {nome}`. Red-first tests cover both disabled-control directions and the TAG-removal name while retaining the ordinary wrap, Escape, and focus-restoration checks.
+
 The purple TAG pills in the event editor remain intentionally unchanged because they encode semantic event metadata selected by the user. They are data styling, not a portal product accent, and therefore sit alongside the documented event/category color exception.
 
 ## Verification
@@ -30,10 +33,10 @@ The purple TAG pills in the event editor remain intentionally unchanged because 
 | Command / check | Result |
 | --- | --- |
 | `npm test` with `docker-compose.dev.yml` PostgreSQL | 15 files, 121 tests passed. |
-| `npm test --workspace web` | 12 files, 42 tests passed after review fix round 1. |
+| `npm test --workspace web` | 12 files, 45 tests passed after review fix round 2. |
 | `npm run typecheck` | Server and web typechecks passed. |
 | `npm run build` | Server build and Vite production build passed. |
-| `git diff --check 4301062..05cab5a` | Passed. |
+| `git diff --check 6439093..7ecb1d1` | Passed. |
 | Static product-accent and contrast check | No `blue-*` utility or `text-gray-400` remains in production TSX. Existing event/category colors and purple TAG pills remain only where they encode data. |
 | Independent review | PASS after the `4848f77` fix. |
 
