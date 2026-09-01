@@ -1,8 +1,45 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LegacyCalendarUser, RetirementDependencies } from "./syncService.js";
-import { retireLegacyCalendars } from "./syncService.js";
+import { retireLegacyCalendars, runFullSync } from "./syncService.js";
+import { isCalendarUsageLimitError } from "../google/retry.js";
 
-vi.mock("../db.js", () => ({ prisma: {} }));
+const db = vi.hoisted(() => ({
+  syncLogCreate: vi.fn(),
+  syncLogUpdate: vi.fn(),
+  appConfigFindUnique: vi.fn(),
+  userFindMany: vi.fn(),
+  userCreate: vi.fn(),
+  userUpdate: vi.fn(),
+  eventInstanceDeleteMany: vi.fn(),
+  transaction: vi.fn(),
+}));
+
+const google = vi.hoisted(() => ({
+  listGroupMembers: vi.fn(),
+  deleteCalendar: vi.fn(),
+}));
+
+vi.mock("../db.js", () => ({
+  prisma: {
+    syncLog: { create: db.syncLogCreate, update: db.syncLogUpdate },
+    appConfig: { findUnique: db.appConfigFindUnique },
+    user: {
+      findMany: db.userFindMany,
+      create: db.userCreate,
+      update: db.userUpdate,
+    },
+    eventInstance: { deleteMany: db.eventInstanceDeleteMany },
+    $transaction: db.transaction,
+  },
+}));
+
+vi.mock("../google/directory.js", () => ({
+  listGroupMembers: google.listGroupMembers,
+}));
+
+vi.mock("../google/calendar.js", () => ({
+  deleteCalendar: google.deleteCalendar,
+}));
 
 const users: LegacyCalendarUser[] = [
   { id: "user-1", email: "prima@rainerum.it", calendarId: "calendar-1" },
@@ -21,6 +58,22 @@ function dependencies(
     ...overrides,
   };
 }
+
+beforeEach(() => {
+  for (const mock of [...Object.values(db), ...Object.values(google)]) mock.mockReset();
+  db.syncLogCreate.mockResolvedValue({ id: "sync-1" });
+  db.syncLogUpdate.mockResolvedValue({ id: "sync-1" });
+  db.appConfigFindUnique.mockResolvedValue({
+    mainGroupEmail: "docenti@rainerum.it",
+    masterEmail: "master@rainerum.it",
+  });
+  db.userCreate.mockResolvedValue({});
+  db.userUpdate.mockResolvedValue({});
+  db.eventInstanceDeleteMany.mockReturnValue({ operation: "delete-instances" });
+  db.transaction.mockResolvedValue([]);
+  google.listGroupMembers.mockResolvedValue([]);
+  google.deleteCalendar.mockResolvedValue(undefined);
+});
 
 describe("legacy personal calendar retirement", () => {
   it("removes a whole calendar before clearing its database references", async () => {
@@ -65,27 +118,43 @@ describe("legacy personal calendar retirement", () => {
     expect(deps.finalizeUser).toHaveBeenCalledWith("user-2");
   });
 
-  it("stops on an operational usage limit and leaves the current and untouched users pending", async () => {
-    const usageLimit = new Error("quota");
-    const deleteCalendar = vi
-      .fn()
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(usageLimit);
-    const deps = dependencies({
-      deleteCalendar,
-      isUsageLimit: vi.fn((error) => error === usageLimit),
-    });
+  it.each([
+    ["429", Object.assign(new Error("too many requests"), { code: 429 })],
+    [
+      "403 quotaExceeded",
+      Object.assign(new Error("quota"), {
+        code: 403,
+        errors: [{ reason: "quotaExceeded" }],
+      }),
+    ],
+    [
+      "403 rateLimitExceeded",
+      Object.assign(new Error("rate"), {
+        code: 403,
+        errors: [{ reason: "rateLimitExceeded" }],
+      }),
+    ],
+    [
+      "403 userRateLimitExceeded",
+      Object.assign(new Error("user rate"), {
+        code: 403,
+        errors: [{ reason: "userRateLimitExceeded" }],
+      }),
+    ],
+  ])("stops on exhausted Google %s and leaves untouched users pending", async (_label, usageLimit) => {
+    const deleteCalendar = vi.fn().mockRejectedValueOnce(usageLimit);
+    const deps = dependencies({ deleteCalendar, isUsageLimit: isCalendarUsageLimitError });
 
     const result = await retireLegacyCalendars(users, deps);
 
     expect(result).toEqual({
-      calendarsRemoved: ["prima@rainerum.it"],
-      calendarsPending: ["seconda@rainerum.it", "terza@rainerum.it"],
+      calendarsRemoved: [],
+      calendarsPending: ["prima@rainerum.it", "seconda@rainerum.it", "terza@rainerum.it"],
       errors: [expect.stringContaining("limite operativo")],
     });
-    expect(deps.finalizeUser).toHaveBeenCalledWith("user-1");
-    expect(deps.finalizeUser).not.toHaveBeenCalledWith("user-2");
-    expect(deleteCalendar).not.toHaveBeenCalledWith("calendar-3");
+    expect(deps.finalizeUser).not.toHaveBeenCalled();
+    expect(deleteCalendar).toHaveBeenCalledOnce();
+    expect(deleteCalendar).not.toHaveBeenCalledWith("calendar-2");
   });
 
   it("retries a pending calendar on a later call", async () => {
@@ -102,5 +171,65 @@ describe("legacy personal calendar retirement", () => {
     expect(second.calendarsRemoved).toEqual(["prima@rainerum.it"]);
     expect(deps.finalizeUser).toHaveBeenCalledOnce();
     expect(deps.finalizeUser).toHaveBeenCalledWith("user-1");
+  });
+});
+
+describe("full synchronization retirement wiring", () => {
+  it("selects every non-null legacy calendar and finalizes it transactionally after deletion", async () => {
+    const deleteOperation = { operation: "delete-instances" };
+    const updateOperation = { operation: "clear-calendar-reference" };
+    db.userFindMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "inactive-user",
+          email: "servizio@rainerum.it",
+          calendarId: "legacy-calendar",
+          isActive: false,
+        },
+      ]);
+    db.eventInstanceDeleteMany.mockReturnValue(deleteOperation);
+    db.userUpdate.mockReturnValue(updateOperation);
+
+    const result = await runFullSync();
+
+    expect(db.userFindMany).toHaveBeenNthCalledWith(2, {
+      where: { calendarId: { not: null } },
+      select: { id: true, email: true, calendarId: true },
+    });
+    expect(google.deleteCalendar).toHaveBeenCalledWith("legacy-calendar");
+    expect(google.deleteCalendar.mock.invocationCallOrder[0]).toBeLessThan(
+      db.eventInstanceDeleteMany.mock.invocationCallOrder[0]
+    );
+    expect(db.eventInstanceDeleteMany).toHaveBeenCalledWith({
+      where: { userId: "inactive-user" },
+    });
+    expect(db.userUpdate).toHaveBeenCalledWith({
+      where: { id: "inactive-user" },
+      data: { calendarId: null, calendarName: null },
+    });
+    expect(db.transaction).toHaveBeenCalledWith([deleteOperation, updateOperation]);
+    expect(result.calendarsRemoved).toEqual(["servizio@rainerum.it"]);
+  });
+
+  it("does not clear database references when whole-calendar deletion fails", async () => {
+    db.userFindMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "pending-user",
+          email: "pending@rainerum.it",
+          calendarId: "pending-calendar",
+          isActive: false,
+        },
+      ]);
+    google.deleteCalendar.mockRejectedValue(new Error("forbidden"));
+
+    const result = await runFullSync();
+
+    expect(db.eventInstanceDeleteMany).not.toHaveBeenCalled();
+    expect(db.userUpdate).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(result.calendarsPending).toEqual(["pending@rainerum.it"]);
   });
 });

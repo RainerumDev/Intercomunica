@@ -19,14 +19,17 @@ describe("isRetriableGoogleError", () => {
   });
 
   it("recognizes long-lived Calendar usage limits", () => {
+    for (const error of [
+      { status: 429 },
+      { status: 403, errors: [{ reason: "quotaExceeded" }] },
+      { status: 403, errors: [{ reason: "rateLimitExceeded" }] },
+      { status: 403, errors: [{ reason: "userRateLimitExceeded" }] },
+    ]) {
+      expect(isCalendarUsageLimitError(error)).toBe(true);
+    }
     expect(
-      isCalendarUsageLimitError({
-        status: 403,
-        errors: [{ reason: "quotaExceeded" }],
-        message: "Calendar usage limits exceeded.",
-      })
-    ).toBe(true);
-    expect(isCalendarUsageLimitError({ status: 429 })).toBe(false);
+      isCalendarUsageLimitError({ status: 403, errors: [{ reason: "forbidden" }] })
+    ).toBe(false);
   });
 
   it("does not retry 4xx client errors or non-Google errors", () => {

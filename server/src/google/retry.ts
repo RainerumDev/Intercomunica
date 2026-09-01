@@ -16,7 +16,10 @@ export function isCalendarUsageLimitError(err: unknown): boolean {
     : typeof error.code === "number"
       ? error.code
       : undefined;
-  return status === 403 && error.errors?.[0]?.reason === "quotaExceeded";
+  if (status === 429) return true;
+  if (status !== 403) return false;
+  const reason = error.errors?.[0]?.reason;
+  return reason === "quotaExceeded" || RATE_REASONS.has(reason ?? "");
 }
 
 /** Transient Google API failures worth retrying (rate limits, server errors). */
