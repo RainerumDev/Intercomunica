@@ -11,6 +11,10 @@ Applicazione web per l'orchestrazione di Google Calendar, la gestione di sottogr
 | Database | PostgreSQL 16 |
 | Google | OAuth 2.0 · Directory API · Calendar API · Gmail API |
 
+## Linee guida UI
+
+Per marchi, token, accessibilità e adozione Lycoris, consulta le [linee guida UI Rainerum](docs/ui-guidelines.md).
+
 ## Architettura in breve
 
 - L'app collega un **account master** (es. `comunicazione@rainerum.it`) via OAuth offline; il refresh token è cifrato (AES-256-GCM) nel database.
