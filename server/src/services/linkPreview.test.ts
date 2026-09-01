@@ -1,6 +1,10 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchLinkPreview,
+  fetchUsingValidatedAddresses,
   UnsafePreviewUrlError,
   type LinkPreviewDependencies,
 } from "./linkPreview.js";
@@ -28,6 +32,35 @@ afterEach(() => {
 });
 
 describe("fetchLinkPreview security boundary", () => {
+  it("connects to the validated address while preserving the original host", async () => {
+    let connectedAddress: string | undefined;
+    let receivedHost: string | undefined;
+    const server = createServer((request, response) => {
+      connectedAddress = request.socket.localAddress;
+      receivedHost = request.headers.host;
+      response.end("pinned transport");
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetchUsingValidatedAddresses(
+        `http://rebind.invalid:${port}/preview`,
+        { headers: { Accept: "text/html" } },
+        [{ address: "127.0.0.1", family: 4 }]
+      );
+
+      expect(await response.text()).toBe("pinned transport");
+      expect(connectedAddress).toBe("127.0.0.1");
+      expect(receivedHost).toBe(`rebind.invalid:${port}`);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
   it.each([
     "file:///etc/passwd",
     "ftp://example.com/file",

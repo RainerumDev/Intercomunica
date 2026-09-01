@@ -1,5 +1,8 @@
 import { lookup as dnsLookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { isIP, type LookupFunction } from "node:net";
+import { Readable } from "node:stream";
 
 const MAX_REDIRECTS = 3;
 const MAX_HTML_BYTES = 1024 * 1024;
@@ -21,7 +24,11 @@ export type LinkPreviewLookupAddress = {
 
 export type LinkPreviewDependencies = {
   lookup: (hostname: string) => Promise<LinkPreviewLookupAddress[]>;
-  fetch: (url: string, init: RequestInit) => Promise<Response>;
+  fetch: (
+    url: string,
+    init: RequestInit,
+    validatedAddresses?: readonly LinkPreviewLookupAddress[]
+  ) => Promise<Response>;
 };
 
 export class UnsafePreviewUrlError extends Error {
@@ -33,8 +40,85 @@ export class UnsafePreviewUrlError extends Error {
 
 const defaultDependencies: LinkPreviewDependencies = {
   lookup: async (hostname) => dnsLookup(hostname, { all: true, verbatim: true }),
-  fetch: (url, init) => globalThis.fetch(url, init),
+  fetch: (url, init, validatedAddresses) => {
+    if (!validatedAddresses) throw new Error("Validated preview addresses are required");
+    return fetchUsingValidatedAddresses(url, init, validatedAddresses);
+  },
 };
+
+function pinnedLookup(addresses: readonly LinkPreviewLookupAddress[]): LookupFunction {
+  const normalized = addresses.map(({ address }) => ({ address, family: isIP(address) }));
+
+  return (_hostname, options, callback) => {
+    const requestedFamily =
+      options.family === "IPv4" ? 4 : options.family === "IPv6" ? 6 : options.family;
+    const candidates = normalized.filter(
+      ({ family }) => !requestedFamily || family === requestedFamily
+    );
+
+    if (candidates.length === 0) {
+      const error = new Error("No validated address matches the requested family") as NodeJS.ErrnoException;
+      error.code = "ENOTFOUND";
+      callback(error, "");
+      return;
+    }
+
+    if (options.all) {
+      callback(null, candidates);
+      return;
+    }
+
+    callback(null, candidates[0].address, candidates[0].family);
+  };
+}
+
+export function fetchUsingValidatedAddresses(
+  value: string,
+  init: RequestInit,
+  validatedAddresses: readonly LinkPreviewLookupAddress[]
+): Promise<Response> {
+  const url = new URL(value);
+  const request = url.protocol === "https:" ? httpsRequest : httpRequest;
+
+  return new Promise((resolve, reject) => {
+    const outgoing = request(
+      url,
+      {
+        agent: false,
+        headers: Object.fromEntries(new Headers(init.headers)),
+        lookup: pinnedLookup(validatedAddresses),
+        method: init.method ?? "GET",
+        signal: init.signal ?? undefined,
+      },
+      (incoming) => {
+        const headers = new Headers();
+        for (const [name, value] of Object.entries(incoming.headers)) {
+          if (Array.isArray(value)) {
+            for (const item of value) headers.append(name, item);
+          } else if (value !== undefined) {
+            headers.set(name, value);
+          }
+        }
+
+        const status = incoming.statusCode ?? 500;
+        const hasNoBody = status === 204 || status === 205 || status === 304;
+        const body = hasNoBody
+          ? null
+          : (Readable.toWeb(incoming) as ReadableStream<Uint8Array>);
+        resolve(
+          new Response(body, {
+            headers,
+            status,
+            statusText: incoming.statusMessage,
+          })
+        );
+      }
+    );
+
+    outgoing.once("error", reject);
+    outgoing.end();
+  });
+}
 
 function isPublicIpv4(address: string): boolean {
   const [a, b, c] = address.split(".").map(Number);
@@ -120,10 +204,15 @@ export function isPublicAddress(address: string): boolean {
   return false;
 }
 
-export async function validatePublicHttpUrl(
+type ResolvedPublicHttpUrl = {
+  url: URL;
+  addresses: LinkPreviewLookupAddress[];
+};
+
+async function resolvePublicHttpUrl(
   value: string,
   lookup: LinkPreviewDependencies["lookup"]
-): Promise<URL> {
+): Promise<ResolvedPublicHttpUrl> {
   let url: URL;
   try {
     url = new URL(value);
@@ -136,9 +225,10 @@ export async function validatePublicHttpUrl(
   }
 
   const hostname = url.hostname.startsWith("[") ? url.hostname.slice(1, -1) : url.hostname;
-  if (isIP(hostname)) {
+  const literalFamily = isIP(hostname);
+  if (literalFamily) {
     if (!isPublicAddress(hostname)) throw new UnsafePreviewUrlError();
-    return url;
+    return { url, addresses: [{ address: hostname, family: literalFamily }] };
   }
 
   const addresses = await lookup(hostname);
@@ -146,7 +236,17 @@ export async function validatePublicHttpUrl(
     throw new UnsafePreviewUrlError();
   }
 
-  return url;
+  return {
+    url,
+    addresses: addresses.map(({ address }) => ({ address, family: isIP(address) })),
+  };
+}
+
+export async function validatePublicHttpUrl(
+  value: string,
+  lookup: LinkPreviewDependencies["lookup"]
+): Promise<URL> {
+  return (await resolvePublicHttpUrl(value, lookup)).url;
 }
 
 async function readBoundedHtml(response: Response): Promise<string> {
@@ -266,32 +366,44 @@ export async function fetchLinkPreview(
   let redirects = 0;
 
   while (true) {
-    const validatedUrl = await validatePublicHttpUrl(currentUrl, dependencies.lookup);
+    const { url: validatedUrl, addresses } = await resolvePublicHttpUrl(
+      currentUrl,
+      dependencies.lookup
+    );
     const response = await dependencies.fetch(validatedUrl.toString(), {
       redirect: "manual",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       headers: { Accept: "text/html" },
-    });
+    }, addresses);
 
-    if (REDIRECT_STATUSES.has(response.status)) {
-      const location = response.headers.get("location");
-      if (!location) throw new Error("Preview redirect is missing a location");
-      if (redirects >= MAX_REDIRECTS) throw new Error("Preview exceeded three redirects");
-      currentUrl = new URL(location, validatedUrl).toString();
-      redirects++;
-      continue;
+    try {
+      if (REDIRECT_STATUSES.has(response.status)) {
+        const location = response.headers.get("location");
+        if (!location) throw new Error("Preview redirect is missing a location");
+        if (redirects >= MAX_REDIRECTS) throw new Error("Preview exceeded three redirects");
+        currentUrl = new URL(location, validatedUrl).toString();
+        redirects++;
+        continue;
+      }
+
+      if (!response.ok) throw new Error(`Preview request failed with status ${response.status}`);
+      const contentType = response.headers.get("content-type")
+        ?.split(";", 1)[0]
+        .trim()
+        .toLowerCase();
+      if (contentType !== "text/html" && contentType !== "application/xhtml+xml") {
+        throw new Error("Preview response is not HTML");
+      }
+
+      const html = await readBoundedHtml(response);
+      return {
+        finalUrl: validatedUrl.toString(),
+        ...extractMetadata(html, validatedUrl.toString()),
+      };
+    } finally {
+      if (response.body && !response.body.locked) {
+        await response.body.cancel().catch(() => undefined);
+      }
     }
-
-    if (!response.ok) throw new Error(`Preview request failed with status ${response.status}`);
-    const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
-    if (contentType !== "text/html" && contentType !== "application/xhtml+xml") {
-      throw new Error("Preview response is not HTML");
-    }
-
-    const html = await readBoundedHtml(response);
-    return {
-      finalUrl: validatedUrl.toString(),
-      ...extractMetadata(html, validatedUrl.toString()),
-    };
   }
 }
