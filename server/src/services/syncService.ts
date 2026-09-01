@@ -9,6 +9,13 @@ import {
 } from "../google/calendar.js";
 import { eventToCalendarPayload } from "./eventService.js";
 import { renderCalendarName } from "./calendarName.js";
+import { isCalendarUsageLimitError } from "../google/retry.js";
+
+const CALENDAR_MUTATION_DELAY_MS = 750;
+
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export interface SyncResult {
   added: string[];
@@ -76,6 +83,7 @@ export async function runFullSync(): Promise<SyncResult> {
     const active = await prisma.user.findMany({ where: { isActive: true } });
     for (const u of active) {
       const desiredName = renderCalendarName(cfg.calendarNameTemplate, u);
+      let calendarMutated = false;
       try {
         if (!u.calendarId) {
           const calendarId = await createTeacherCalendar(u.email, desiredName);
@@ -84,14 +92,24 @@ export async function runFullSync(): Promise<SyncResult> {
             data: { calendarId, calendarName: desiredName },
           });
           result.calendarsCreated.push(u.email);
+          calendarMutated = true;
         } else if (u.calendarName !== desiredName) {
           await renameCalendar(u.calendarId, desiredName);
           await prisma.user.update({ where: { id: u.id }, data: { calendarName: desiredName } });
           result.calendarsRenamed.push(u.email);
+          calendarMutated = true;
         }
       } catch (err) {
+        if (isCalendarUsageLimitError(err)) {
+          result.errors.push(
+            "Google Calendar ha applicato un limite operativo temporaneo. " +
+            "Sincronizzazione interrotta senza perdere i progressi; attendere alcune ore e riprovare."
+          );
+          break;
+        }
         result.errors.push(`calendario ${u.email}: ${(err as Error).message}`);
       }
+      if (calendarMutated) await pause(CALENDAR_MUTATION_DELAY_MS);
     }
 
     // --- 3. event reconciliation -------------------------------------------

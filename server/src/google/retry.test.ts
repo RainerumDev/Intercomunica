@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { withRetry, isRetriableGoogleError } from "./retry.js";
+import { withRetry, isCalendarUsageLimitError, isRetriableGoogleError } from "./retry.js";
 
 const noSleep = () => Promise.resolve();
 
@@ -13,8 +13,20 @@ describe("isRetriableGoogleError", () => {
   it("retries 403 only with rate-limit reason", () => {
     expect(isRetriableGoogleError({ status: 403, errors: [{ reason: "rateLimitExceeded" }] })).toBe(true);
     expect(isRetriableGoogleError({ status: 403, errors: [{ reason: "userRateLimitExceeded" }] })).toBe(true);
+    expect(isRetriableGoogleError({ status: 403, errors: [{ reason: "quotaExceeded" }] })).toBe(false);
     expect(isRetriableGoogleError({ status: 403, errors: [{ reason: "forbidden" }] })).toBe(false);
     expect(isRetriableGoogleError({ status: 403 })).toBe(false);
+  });
+
+  it("recognizes long-lived Calendar usage limits", () => {
+    expect(
+      isCalendarUsageLimitError({
+        status: 403,
+        errors: [{ reason: "quotaExceeded" }],
+        message: "Calendar usage limits exceeded.",
+      })
+    ).toBe(true);
+    expect(isCalendarUsageLimitError({ status: 429 })).toBe(false);
   });
 
   it("does not retry 4xx client errors or non-Google errors", () => {

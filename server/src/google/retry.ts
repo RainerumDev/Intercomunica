@@ -6,7 +6,18 @@ export interface RetryOptions {
 }
 
 const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
-const RATE_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded"]);
+const RATE_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded"]);
+
+export function isCalendarUsageLimitError(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const error = err as { status?: number; code?: number | string; errors?: { reason?: string }[] };
+  const status = typeof error.status === "number"
+    ? error.status
+    : typeof error.code === "number"
+      ? error.code
+      : undefined;
+  return status === 403 && error.errors?.[0]?.reason === "quotaExceeded";
+}
 
 /** Transient Google API failures worth retrying (rate limits, server errors). */
 export function isRetriableGoogleError(err: unknown): boolean {
