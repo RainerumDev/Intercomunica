@@ -67,6 +67,26 @@ describe("CalendarResources", () => {
     expect(html).toContain("Collega il mio calendario");
     expect(html).toContain("Il tuo calendario personale non è disponibile");
   });
+
+  it("keeps both actions visible while links are loading or unavailable", () => {
+    const html = renderToStaticMarkup(
+      <CalendarResources
+        links={{
+          generalGoogleUrl: null,
+          personalIcsUrl: null,
+          personalWebcalUrl: null,
+          personalFeedEligible: false,
+          lastFetchedAt: null,
+        }}
+        statusMessage="Caricamento collegamenti calendario…"
+        onRotate={async () => links}
+      />
+    );
+
+    expect(html).toContain("Collega calendario generale");
+    expect(html).toContain("Collega il mio calendario");
+    expect(html).toContain("Caricamento collegamenti calendario…");
+  });
 });
 
 describe("confirmRotation", () => {

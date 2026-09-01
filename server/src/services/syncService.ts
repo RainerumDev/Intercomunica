@@ -56,6 +56,7 @@ export async function retireLegacyCalendars(
       }
       const message = error instanceof Error ? error.message : String(error);
       errors.push(`calendario ${user.email}: ${message}`);
+      await dependencies.pause(CALENDAR_MUTATION_DELAY_MS);
       continue;
     }
     calendarsRemoved.push(user.email);

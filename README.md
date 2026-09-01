@@ -14,10 +14,10 @@ Applicazione web per l'orchestrazione di Google Calendar, la gestione di sottogr
 ## Architettura in breve
 
 - L'app collega un **account master** (es. `comunicazione@rainerum.it`) via OAuth offline; il refresh token è cifrato (AES-256-GCM) nel database.
-- Per ogni docente del Google Group principale (es. `docenti@rainerum.it`) l'app crea un **calendario dedicato** nell'account master e lo condivide in **sola lettura** con il docente. L'app è l'unico orchestratore con permessi di scrittura.
-- Tutti gli eventi vengono salvati nel **calendario generale** configurato. Le modifiche effettuate direttamente su Google vengono importate automaticamente e propagate dall'app.
-- Gli eventi creati dall'app vengono **iniettati** nei calendari dei docenti appartenenti ai sottogruppi selezionati, con `extendedProperties.private` che trasporta i metadati (ID evento app, sottogruppi, TAG).
-- Gli eventi **«Visibile a tutti»** vengono copiati nei calendari di tutti i docenti; gli eventi **«Solo bacheca»** restano esclusivamente nel calendario generale e sulla bacheca.
+- Tutti gli eventi vengono salvati nel **calendario generale Google** configurato. Le modifiche effettuate direttamente su Google vengono importate automaticamente nell'app.
+- Ogni docente può sottoscrivere un **feed ICS personale** servito da Intercomunica, composto dagli eventi globali e da quelli dei suoi sottogruppi. Gli eventi **«Solo bacheca»** non entrano nel feed personale.
+- Intercomunica non crea più calendari Google individuali e non replica più una copia dell'evento per ogni destinatario. La sincronizzazione docenti elimina in modo progressivo eventuali calendari individuali legacy.
+- La **bacheca** offre sempre il collegamento al calendario generale ospitato su Google e quello al feed ICS personale protetto da token.
 - La **bacheca** mostra, per ogni TAG, i primi 3 impegni imminenti visibili al docente (eventi dei suoi sottogruppi + eventi globali).
 - Le **email** ai sottogruppi partono dall'account master via Gmail API, con `Reply-To` impostato al docente che scrive; selettore A:/CCN: (default A:).
 
@@ -41,7 +41,7 @@ cp server/.env.example server/.env
 # compila GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, JWT_SECRET
 # ENCRYPTION_KEY: openssl rand -hex 32
 # ADMIN_EMAILS: email di presidenza/direzione separate da virgola
-# CALENDAR_EXCLUDED_EMAILS: account nascosti dall'elenco docenti e senza calendario personale
+# CALENDAR_EXCLUDED_EMAILS: account nascosti dall'elenco docenti e senza feed calendario personale
 # ALLOWED_EMAIL_DOMAIN: limita il login al dominio della scuola (consigliato)
 ```
 
@@ -53,7 +53,7 @@ npm run prisma:push --workspace server   # crea lo schema DB
 npm run dev                   # server :3000 + web :5173
 ```
 
-Apri <http://localhost:5173>, accedi con un account presente in `ADMIN_EMAILS`, poi da **Impostazioni**: collega l'account master → seleziona il gruppo docenti → **Sincronizza / Refresh**.
+Apri <http://localhost:5173>, accedi con un account presente in `ADMIN_EMAILS`, poi da **Impostazioni**: collega l'account master → seleziona il gruppo docenti → configura il calendario generale → **Sincronizza / Refresh**.
 
 ## Deploy produzione con Docker
 
@@ -102,6 +102,43 @@ esegue un controllo incrementale ogni 15 minuti e limita la prima importazione a
 tutti gli eventi futuri. Dopo il deploy, collega il calendario dalla pagina **Impostazioni** usando il suo ID
 `@group.calendar.google.com`; l'account master deve avere accesso in scrittura a quel calendario.
 
+I feed personali sono pubblicati sotto `${PUBLIC_URL}/calendar/feed/…`. Il token nel percorso equivale a
+una credenziale: non deve comparire in ticket, screenshot o log di accesso. Prima del rilascio verifica che
+Nginx Proxy Manager e gli eventuali sistemi di osservabilità non registrino, oppure oscurino, i percorsi
+che iniziano con `/calendar/feed/`.
+
+### Migrazione dei calendari personali Google
+
+La prima sincronizzazione docenti dopo questo aggiornamento tenta di eliminare i calendari Google
+individuali creati dalle versioni precedenti. L'eliminazione del calendario remoto è intenzionale e non è
+annullabile con un semplice rollback del codice.
+
+Prima di distribuire la release:
+
+1. crea il backup PostgreSQL descritto sotto;
+2. salva anche l'elenco dei calendari ancora associati agli utenti con una query di sola lettura:
+
+```bash
+umask 077
+docker compose --env-file .env.production exec -T db \
+  sh -c "psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -c 'SELECT email, \"calendarId\" FROM \"User\" WHERE \"calendarId\" IS NOT NULL ORDER BY email;'" \
+  > ../legacy-personal-calendars.txt
+```
+
+Il file viene così creato fuori dal checkout Git e leggibile solo dall'utente che esegue il comando.
+Contiene indirizzi email e identificativi Google: custodiscilo insieme al backup e cancellalo dopo la verifica.
+
+3. distribuisci l'applicazione e attendi che le migrazioni terminino;
+4. verifica la sincronizzazione del calendario generale;
+5. avvia **Sincronizza / Refresh** dalle Impostazioni;
+6. controlla i conteggi dei calendari rimossi e ancora pendenti;
+7. in presenza di elementi pendenti, attendi il termine indicato dall'errore Google e ripeti la sincronizzazione;
+8. prova almeno un feed personale dalla Bacheca senza condividere il relativo URL.
+
+La sincronizzazione non cancella i riferimenti locali finché Google non conferma la rimozione o segnala
+che il calendario è già assente. Non eseguire chiamate manuali di eliminazione né modificare direttamente
+`calendarId` nel database per accelerare la procedura.
+
 ### Aggiornamenti e log
 
 Prima di aggiornare, verifica di essere sulla revisione prevista. Le migrazioni Prisma vengono applicate all'avvio dell'applicazione:
@@ -143,7 +180,10 @@ git checkout <tag-o-commit-precedente>
 docker compose --env-file .env.production up --build -d --wait
 ```
 
-Il rollback del database non è automatico. Una release con una migrazione distruttiva richiede un piano di ripristino del database verificato **prima** del deploy.
+Il rollback del database non è automatico. Inoltre, dopo la sincronizzazione di migrazione, tornare a una
+versione precedente non ricrea i calendari Google individuali eliminati: servirebbero nuovi calendari e una
+nuova reiniezione degli eventi. Questa release richiede quindi backup e verifica dei `calendarId` **prima**
+del deploy.
 
 ## Comandi utili
 

@@ -4,6 +4,14 @@ import { useAuth } from "../auth";
 import { CalendarResources } from "../components/CalendarResources";
 import type { BachecaSection, CalendarLinks } from "../types";
 
+const unavailableCalendarLinks: CalendarLinks = {
+  generalGoogleUrl: null,
+  personalIcsUrl: null,
+  personalWebcalUrl: null,
+  personalFeedEligible: false,
+  lastFetchedAt: null,
+};
+
 const dateFmt = new Intl.DateTimeFormat("it-IT", {
   weekday: "short",
   day: "numeric",
@@ -68,19 +76,17 @@ export default function Bacheca() {
       </h1>
       <p className="text-gray-500 mb-6">I tuoi prossimi impegni, organizzati per categoria.</p>
 
-      {calendarLinksError ? (
-        <section aria-labelledby="calendar-resources-title" className="mb-8 rounded-lg border border-red-200 bg-red-50 p-4">
-          <h2 id="calendar-resources-title" className="font-semibold text-red-800">Calendari</h2>
-          <p className="mt-1 text-sm text-red-700">Impossibile caricare i collegamenti del calendario: {calendarLinksError}</p>
-        </section>
-      ) : calendarLinks ? (
-        <CalendarResources links={calendarLinks} onRotate={rotateCalendarLink} />
-      ) : (
-        <section aria-labelledby="calendar-resources-title" className="mb-8 rounded-lg border border-gray-200 bg-white p-4">
-          <h2 id="calendar-resources-title" className="font-semibold text-gray-800">Calendari</h2>
-          <p className="mt-1 text-sm text-gray-500">Caricamento collegamenti calendario…</p>
-        </section>
-      )}
+      <CalendarResources
+        links={calendarLinks ?? unavailableCalendarLinks}
+        onRotate={rotateCalendarLink}
+        statusMessage={
+          calendarLinksError
+            ? `Impossibile caricare i collegamenti del calendario: ${calendarLinksError}`
+            : calendarLinks
+              ? undefined
+              : "Caricamento collegamenti calendario…"
+        }
+      />
 
       {error ? (
         <p className="text-red-600">{error}</p>

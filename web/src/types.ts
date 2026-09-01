@@ -14,7 +14,6 @@ export interface Member {
   email: string;
   name: string | null;
   role: "ADMIN" | "TEACHER";
-  hasCalendar: boolean;
   subgroups: SubgroupRef[];
 }
 
@@ -42,7 +41,6 @@ export interface AppEvent {
   bachecaOnly: boolean;
   tags: Tag[];
   subgroupIds: string[];
-  instanceCount?: number;
 }
 
 export interface BachecaSection {
@@ -66,7 +64,6 @@ export interface AdminConfig {
   masterConnected: boolean;
   masterEmail: string | null;
   mainGroupEmail: string | null;
-  calendarNameTemplate: string;
   generalCalendarId: string | null;
   generalCalendarLastSyncAt: string | null;
   generalCalendarLastError: string | null;

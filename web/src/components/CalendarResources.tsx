@@ -4,6 +4,7 @@ import type { CalendarLinks } from "../types";
 interface CalendarResourcesProps {
   links: CalendarLinks;
   onRotate: () => Promise<CalendarLinks>;
+  statusMessage?: string;
 }
 
 const ROTATION_CONFIRMATION =
@@ -16,7 +17,7 @@ export async function confirmRotation(
   if (confirm(ROTATION_CONFIRMATION)) await rotate();
 }
 
-export function CalendarResources({ links, onRotate }: CalendarResourcesProps) {
+export function CalendarResources({ links, onRotate, statusMessage }: CalendarResourcesProps) {
   const [personalDialogOpen, setPersonalDialogOpen] = useState(false);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const [rotationError, setRotationError] = useState<string | null>(null);
@@ -104,6 +105,11 @@ export function CalendarResources({ links, onRotate }: CalendarResourcesProps) {
       <h2 id="calendar-resources-title" className="text-lg font-semibold text-gray-800 mb-3">
         Calendari
       </h2>
+      {statusMessage && (
+        <p role="status" className="mb-3 text-sm text-gray-600">
+          {statusMessage}
+        </p>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
           <h3 className="font-semibold text-gray-900">Calendario generale</h3>

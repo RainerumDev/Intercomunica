@@ -127,6 +127,10 @@ describe("legacy personal calendar retirement", () => {
     });
     expect(deps.finalizeUser).toHaveBeenCalledOnce();
     expect(deps.finalizeUser).toHaveBeenCalledWith("user-2");
+    expect(deps.pause).toHaveBeenCalledTimes(2);
+    expect(deps.pause.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteCalendar.mock.invocationCallOrder[1]
+    );
   });
 
   it.each([
