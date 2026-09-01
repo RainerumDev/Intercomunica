@@ -18,6 +18,7 @@ import { emailRouter } from "./routes/email.js";
 import { bachecaRouter } from "./routes/bacheca.js";
 import { wipRouter } from "./routes/wip.js";
 import { googleCalendarRouter } from "./routes/googleCalendar.js";
+import { calendarFeedRouter, calendarLinksRouter } from "./routes/calendarFeed.js";
 import { startGeneralCalendarScheduler } from "./services/generalCalendarSync.js";
 import { checkDatabase } from "./health.js";
 
@@ -46,6 +47,8 @@ export function createApp(): express.Express {
   app.use("/api/email", emailRouter);
   app.use("/api/bacheca", bachecaRouter);
   app.use("/api/wip", wipRouter);
+  app.use("/api/calendar-links", calendarLinksRouter);
+  app.use("/calendar/feed", calendarFeedRouter);
 
   // production: serve the built frontend (SPA fallback for client routes)
   const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../web/dist");
