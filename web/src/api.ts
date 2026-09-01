@@ -1,3 +1,5 @@
+import type { SharedResource, SharedResourceDraft } from "./types";
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -37,4 +39,25 @@ export const api = {
   put: <T>(path: string, body: unknown) =>
     request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+};
+
+export interface ResourcePreview {
+  finalUrl: string;
+  title: string | null;
+  description: string | null;
+  imageUrl: string | null;
+  siteName: string | null;
+}
+
+export const adminResourcesApi = {
+  list: () => api.get<SharedResource[]>("/api/admin/resources"),
+  preview: (url: string) =>
+    api.post<ResourcePreview>("/api/admin/resources/preview", { url }),
+  create: (draft: SharedResourceDraft) =>
+    api.post<SharedResource>("/api/admin/resources", draft),
+  update: (id: string, draft: SharedResourceDraft) =>
+    api.put<SharedResource>(`/api/admin/resources/${id}`, draft),
+  remove: (id: string) => api.delete<{ ok: true }>(`/api/admin/resources/${id}`),
+  reorder: (resourceIds: string[]) =>
+    api.put<SharedResource[]>("/api/admin/resources/order", { resourceIds }),
 };

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import type { AdminConfig, GeneralCalendarSyncResult, SyncLogEntry, SyncResult } from "../types";
+import AdminResources from "./AdminResources";
 
 interface GroupOption {
   email: string;
@@ -11,7 +12,7 @@ const NAME_PLACEHOLDER = "{nome}";
 const PREVIEW_TEACHER = "Mario Rossi";
 const GENERAL_CALENDAR_EXAMPLE = "c_b4c23e467aa6ec43d9d5da28d534233058f7c18cbc8c0341333535c72eb87c29@group.calendar.google.com";
 
-export default function AdminSettings() {
+export function CalendarSettings() {
   const [cfg, setCfg] = useState<AdminConfig | null>(null);
   const [groups, setGroups] = useState<GroupOption[] | null>(null);
   const [selectedGroup, setSelectedGroup] = useState("");
@@ -421,6 +422,92 @@ export default function AdminSettings() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+type SettingsTab = "calendar" | "resources";
+
+export default function AdminSettings() {
+  const [activeTab, setActiveTab] = useState<SettingsTab>("calendar");
+
+  const selectTab = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    requestAnimationFrame(() => document.getElementById(`settings-${tab}-tab`)?.focus());
+  };
+
+  const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      selectTab(activeTab === "calendar" ? "resources" : "calendar");
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      selectTab("calendar");
+    } else if (event.key === "End") {
+      event.preventDefault();
+      selectTab("resources");
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div
+        role="tablist"
+        aria-label="Sezioni delle impostazioni"
+        className="flex gap-1 border-b border-gray-200"
+      >
+        <button
+          id="settings-calendar-tab"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "calendar"}
+          aria-controls="settings-calendar-panel"
+          tabIndex={activeTab === "calendar" ? 0 : -1}
+          onClick={() => setActiveTab("calendar")}
+          onKeyDown={onTabKeyDown}
+          className={`border-b-2 px-4 py-2 text-sm font-medium ${
+            activeTab === "calendar"
+              ? "border-blue-700 text-blue-700"
+              : "border-transparent text-gray-500 hover:text-gray-800"
+          }`}
+        >
+          Calendario
+        </button>
+        <button
+          id="settings-resources-tab"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "resources"}
+          aria-controls="settings-resources-panel"
+          tabIndex={activeTab === "resources" ? 0 : -1}
+          onClick={() => setActiveTab("resources")}
+          onKeyDown={onTabKeyDown}
+          className={`border-b-2 px-4 py-2 text-sm font-medium ${
+            activeTab === "resources"
+              ? "border-blue-700 text-blue-700"
+              : "border-transparent text-gray-500 hover:text-gray-800"
+          }`}
+        >
+          Risorse condivise
+        </button>
+      </div>
+
+      <div
+        id="settings-calendar-panel"
+        role="tabpanel"
+        aria-labelledby="settings-calendar-tab"
+        hidden={activeTab !== "calendar"}
+      >
+        {activeTab === "calendar" && <CalendarSettings />}
+      </div>
+      <div
+        id="settings-resources-panel"
+        role="tabpanel"
+        aria-labelledby="settings-resources-tab"
+        hidden={activeTab !== "resources"}
+      >
+        {activeTab === "resources" && <AdminResources />}
+      </div>
     </div>
   );
 }
