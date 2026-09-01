@@ -42,6 +42,16 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
     previewGeneration.current += 1;
   }, []);
 
+  useEffect(() => {
+    const availableSubgroupIds = new Set(subgroups.map((subgroup) => subgroup.id));
+    setDraft((current) => {
+      const subgroupIds = current.subgroupIds.filter((id) => availableSubgroupIds.has(id));
+      return subgroupIds.length === current.subgroupIds.length
+        ? current
+        : { ...current, subgroupIds };
+    });
+  }, [subgroups]);
+
   const subgroupFolders = useMemo(() => {
     const grouped = new Map<string, Subgroup[]>();
     for (const subgroup of subgroups) {

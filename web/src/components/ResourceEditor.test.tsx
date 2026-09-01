@@ -4,6 +4,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { adminResourcesApi, type ResourcePreview } from "../api";
+import type { Subgroup } from "../types";
 import { emptyResourceDraft } from "./resourceForm";
 import ResourceEditor from "./ResourceEditor";
 
@@ -31,6 +32,104 @@ afterEach(() => {
 });
 
 describe("ResourceEditor", () => {
+  it("removes unavailable subgroup IDs while preserving the rest of the edited draft", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(async () => {});
+    const stale: Subgroup = { id: "stale", name: "Stale", description: null, members: [] };
+    const retained: Subgroup = { id: "retained", name: "Retained", description: null, members: [] };
+    const replacement: Subgroup = { id: "replacement", name: "Replacement", description: null, members: [] };
+    const { rerender } = render(
+      <ResourceEditor
+        initialDraft={{
+          ...emptyResourceDraft,
+          url: "https://resource.example.org",
+          title: "Titolo iniziale",
+          description: "Descrizione iniziale",
+          previewEnabled: true,
+          previewImageUrl: "https://images.example.org/preview.png",
+          previewSiteName: "Sito iniziale",
+          isGlobal: false,
+          subgroupIds: ["stale", "retained"],
+        }}
+        subgroups={[stale, retained]}
+        onSave={onSave}
+        onCancel={() => {}}
+      />
+    );
+
+    const title = screen.getByRole("textbox", { name: "Titolo" });
+    const description = screen.getByRole("textbox", { name: "Descrizione" });
+    await user.clear(title);
+    await user.type(title, "Titolo modificato");
+    await user.clear(description);
+    await user.type(description, "Descrizione modificata");
+
+    rerender(
+      <ResourceEditor
+        initialDraft={emptyResourceDraft}
+        subgroups={[retained, replacement]}
+        onSave={onSave}
+        onCancel={() => {}}
+      />
+    );
+
+    expect(screen.queryByRole("checkbox", { name: "Stale" })).toBeNull();
+    expect((screen.getByRole("checkbox", { name: "Retained" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "Replacement" }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("textbox", { name: "Titolo" }) as HTMLInputElement).value).toBe("Titolo modificato");
+    expect((screen.getByRole("textbox", { name: "Descrizione" }) as HTMLTextAreaElement).value)
+      .toBe("Descrizione modificata");
+
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+    expect(onSave).toHaveBeenCalledWith({
+      url: "https://resource.example.org",
+      title: "Titolo modificato",
+      description: "Descrizione modificata",
+      previewEnabled: true,
+      previewImageUrl: "https://images.example.org/preview.png",
+      previewSiteName: "Sito iniziale",
+      isGlobal: false,
+      subgroupIds: ["retained"],
+    });
+  });
+
+  it("requires a replacement access target when refreshed subgroups remove every selection", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(async () => {});
+    const stale: Subgroup = { id: "stale", name: "Stale", description: null, members: [] };
+    const replacement: Subgroup = { id: "replacement", name: "Replacement", description: null, members: [] };
+    const { rerender } = render(
+      <ResourceEditor
+        initialDraft={{
+          ...emptyResourceDraft,
+          url: "https://resource.example.org",
+          title: "Titolo",
+          isGlobal: false,
+          subgroupIds: ["stale"],
+        }}
+        subgroups={[stale]}
+        onSave={onSave}
+        onCancel={() => {}}
+      />
+    );
+
+    rerender(
+      <ResourceEditor
+        initialDraft={emptyResourceDraft}
+        subgroups={[replacement]}
+        onSave={onSave}
+        onCancel={() => {}}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+
+    const subgroupFieldset = screen.getByRole("group", { name: "Sottogruppi destinatari" });
+    expect(subgroupFieldset.getAttribute("aria-invalid")).toBe("true");
+    expect(subgroupFieldset.getAttribute("aria-describedby")).toBe("resource-subgroups-error");
+    expect(screen.getByText("Seleziona almeno un sottogruppo.")).toBeTruthy();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it("keeps the latest URL and edits when an older preview resolves last", async () => {
     const user = userEvent.setup();
     const first = deferred<ResourcePreview>();

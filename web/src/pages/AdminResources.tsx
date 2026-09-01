@@ -217,7 +217,7 @@ export default function AdminResources() {
           <p role="alert">{refreshError}</p>
           <button
             type="button"
-            onClick={() => void refreshResources()}
+            onClick={() => void refreshResourceAudiences()}
             disabled={mutationsDisabled}
             className="mt-2 rounded border border-amber-700 px-2.5 py-1 font-medium hover:bg-amber-100"
           >

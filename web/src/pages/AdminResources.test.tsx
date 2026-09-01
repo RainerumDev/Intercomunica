@@ -219,10 +219,10 @@ describe("AdminResources", () => {
     expect(await screen.findByRole("heading", { name: "Prima aggiornata" })).toBeTruthy();
   });
 
-  it("refreshes authoritative state after an audience conflict without losing the draft", async () => {
+  it("drops a stale audience after a conflict and retries with only the selected replacement", async () => {
     const user = userEvent.setup();
     const targeted = { ...first, isGlobal: false, subgroupIds: ["old-group"] };
-    const authoritative = { ...targeted, title: "Prima autoritativa" };
+    const authoritative = { ...targeted, title: "Prima autoritativa", subgroupIds: ["new-group"] };
     const oldSubgroup: Subgroup = {
       id: "old-group", name: "Gruppo eliminato", description: null, members: [],
     };
@@ -235,9 +235,11 @@ describe("AdminResources", () => {
     vi.mocked(api.get)
       .mockResolvedValueOnce([oldSubgroup])
       .mockResolvedValueOnce([newSubgroup]);
-    vi.spyOn(adminResourcesApi, "update").mockRejectedValue(
-      new ApiError(409, "Uno o più sottogruppi selezionati non esistono più", "RESOURCE_AUDIENCE_CONFLICT")
-    );
+    const update = vi.spyOn(adminResourcesApi, "update")
+      .mockRejectedValueOnce(
+        new ApiError(409, "Uno o più sottogruppi selezionati non esistono più", "RESOURCE_AUDIENCE_CONFLICT")
+      )
+      .mockResolvedValueOnce({ ...authoritative, title: "Bozza preservata" });
     render(<AdminResources />);
 
     const cards = await screen.findAllByRole("article");
@@ -252,8 +254,19 @@ describe("AdminResources", () => {
     expect(await screen.findByRole("heading", { name: "Prima autoritativa" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Seconda" })).toBeNull();
     expect(screen.queryByRole("checkbox", { name: "Gruppo eliminato" })).toBeNull();
-    expect(screen.getByRole("checkbox", { name: "Gruppo disponibile" })).toBeTruthy();
+    const replacement = screen.getByRole("checkbox", { name: "Gruppo disponibile" });
+    expect((replacement as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByText("Seleziona almeno un sottogruppo.")).toBeTruthy();
     expect(api.get).toHaveBeenCalledTimes(2);
+
+    await user.click(replacement);
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(update.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
+      title: "Bozza preservata",
+      subgroupIds: ["new-group"],
+    }));
+    expect(update.mock.calls[1]?.[1].subgroupIds).not.toContain("old-group");
   });
 
   it("keeps remaining resource controls disabled until the post-delete refresh settles", async () => {
@@ -284,12 +297,23 @@ describe("AdminResources", () => {
   it("locks an open editor and its submit handler during a manual refresh retry", async () => {
     const user = userEvent.setup();
     const retryRefresh = deferred<SharedResource[]>();
+    const retrySubgroups = deferred<Subgroup[]>();
+    const initialSubgroup: Subgroup = {
+      id: "old-group", name: "Gruppo iniziale", description: null, members: [],
+    };
+    const refreshedSubgroup: Subgroup = {
+      id: "new-group", name: "Gruppo aggiornato", description: null, members: [],
+    };
+    const targetedFirst = { ...first, isGlobal: false, subgroupIds: [initialSubgroup.id] };
     vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.spyOn(adminResourcesApi, "list")
-      .mockResolvedValueOnce([first, second])
+      .mockResolvedValueOnce([targetedFirst, second])
       .mockRejectedValueOnce(new Error("Aggiornamento fallito"))
       .mockReturnValueOnce(retryRefresh.promise);
     vi.spyOn(adminResourcesApi, "remove").mockResolvedValue({ ok: true });
+    vi.mocked(api.get)
+      .mockResolvedValueOnce([initialSubgroup])
+      .mockReturnValueOnce(retrySubgroups.promise);
     const update = vi.spyOn(adminResourcesApi, "update").mockResolvedValue(first);
     render(<AdminResources />);
 
@@ -313,11 +337,16 @@ describe("AdminResources", () => {
     fireEvent.submit(form);
     expect(update).not.toHaveBeenCalled();
 
-    await act(async () => retryRefresh.resolve([first]));
+    await act(async () => retryRefresh.resolve([targetedFirst]));
+    expect(save.disabled).toBe(true);
+    expect(api.get).toHaveBeenCalledTimes(2);
+    await act(async () => retrySubgroups.resolve([refreshedSubgroup]));
     await waitFor(() => {
       expect(save.disabled).toBe(false);
       expect(cancel.disabled).toBe(false);
       expect(previewButton.disabled).toBe(false);
     });
+    expect(screen.queryByRole("checkbox", { name: "Gruppo iniziale" })).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "Gruppo aggiornato" })).toBeTruthy();
   });
 });
