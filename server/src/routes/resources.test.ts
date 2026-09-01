@@ -126,6 +126,23 @@ describe("admin resource routes", () => {
     expect(resourceOperations.createResource).toHaveBeenCalledWith(resourceInput);
   });
 
+  it("returns typed 409 when a selected subgroup was deleted before resource creation", async () => {
+    resourceOperations.createResource.mockRejectedValue(
+      Object.assign(new Error("Foreign key constraint failed"), { code: "P2003" })
+    );
+
+    const response = await request(createApp())
+      .post("/api/admin/resources")
+      .set("Cookie", adminCookie())
+      .send(resourceInput);
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      error: "Uno o più sottogruppi selezionati non esistono più",
+      code: "RESOURCE_AUDIENCE_CONFLICT",
+    });
+  });
+
   it("returns a bounded preview error without creating a resource", async () => {
     const privateFailure = "private upstream details ".repeat(100);
     previewOperations.fetchLinkPreview.mockRejectedValue(new Error(privateFailure));
@@ -186,6 +203,23 @@ describe("admin resource routes", () => {
 
     expect(response.status).toBe(404);
     expect(response.body).toEqual({ error: "Risorsa non trovata" });
+  });
+
+  it("returns typed 409 when a selected subgroup was deleted before resource update", async () => {
+    resourceOperations.updateResource.mockRejectedValue(
+      Object.assign(new Error("Foreign key constraint failed"), { code: "P2003" })
+    );
+
+    const response = await request(createApp())
+      .put("/api/admin/resources/resource-1")
+      .set("Cookie", adminCookie())
+      .send(resourceInput);
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      error: "Uno o più sottogruppi selezionati non esistono più",
+      code: "RESOURCE_AUDIENCE_CONFLICT",
+    });
   });
 
   it("deletes a resource and returns an acknowledgement", async () => {

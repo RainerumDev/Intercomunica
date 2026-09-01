@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { adminResourcesApi, api } from "../api";
+import { adminResourcesApi, api, ApiError } from "../api";
 import ResourceCard from "../components/ResourceCard";
 import ResourceEditor from "../components/ResourceEditor";
 import { emptyResourceDraft, moveResourceId } from "../components/resourceForm";
@@ -81,16 +81,27 @@ export default function AdminResources() {
 
   const save = async (draft: SharedResourceDraft) => {
     if (!editor || mutationsDisabled) return;
-    const saved = editor.resourceId
-      ? await adminResourcesApi.update(editor.resourceId, draft)
-      : await adminResourcesApi.create(draft);
-    setResources((current) => {
-      if (!current) return [saved];
-      const index = current.findIndex((resource) => resource.id === saved.id);
-      if (index < 0) return [...current, saved];
-      return current.map((resource) => resource.id === saved.id ? saved : resource);
-    });
-    setEditor(null);
+    setBusyId(editor.resourceId ?? "new-resource");
+    setMutationError(null);
+    try {
+      const saved = editor.resourceId
+        ? await adminResourcesApi.update(editor.resourceId, draft)
+        : await adminResourcesApi.create(draft);
+      setResources((current) => {
+        if (!current) return [saved];
+        const index = current.findIndex((resource) => resource.id === saved.id);
+        if (index < 0) return [...current, saved];
+        return current.map((resource) => resource.id === saved.id ? saved : resource);
+      });
+      setEditor(null);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        await refreshResources();
+      }
+      throw error;
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const remove = async (resource: SharedResource) => {
@@ -127,6 +138,9 @@ export default function AdminResources() {
     } catch (moveError) {
       setResources(previous);
       setMutationError((moveError as Error).message);
+      if (moveError instanceof ApiError && moveError.status === 409) {
+        await refreshResources();
+      }
     } finally {
       setBusyId(null);
     }
@@ -183,6 +197,7 @@ export default function AdminResources() {
           <button
             type="button"
             onClick={() => void refreshResources()}
+            disabled={mutationsDisabled}
             className="mt-2 rounded border border-amber-700 px-2.5 py-1 font-medium hover:bg-amber-100"
           >
             Riprova aggiornamento

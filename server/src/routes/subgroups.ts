@@ -1,10 +1,18 @@
 import { Router } from "express";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../auth/session.js";
 import { h, parseBody } from "./helpers.js";
 
 export const subgroupsRouter = Router();
+
+export class SubgroupResourceAudienceConflictError extends Error {
+  constructor(readonly subgroupId: string) {
+    super(`Subgroup ${subgroupId} is the sole audience of a shared resource`);
+    this.name = "SubgroupResourceAudienceConflictError";
+  }
+}
 
 /** Flusso 4.1 — everyone can consult the directory of subgroups + members. */
 subgroupsRouter.get(
@@ -70,8 +78,34 @@ subgroupsRouter.delete(
   "/:id",
   requireAdmin,
   h(async (req, res) => {
-    await prisma.subgroup.delete({ where: { id: req.params.id } });
-    res.json({ ok: true });
+    try {
+      await prisma.$transaction(async (transaction) => {
+        const orphanedResource = await transaction.sharedResource.findFirst({
+          where: {
+            isGlobal: false,
+            AND: [
+              { subgroups: { some: { subgroupId: req.params.id } } },
+              { subgroups: { none: { subgroupId: { not: req.params.id } } } },
+            ],
+          },
+          select: { id: true },
+        });
+        if (orphanedResource) {
+          throw new SubgroupResourceAudienceConflictError(req.params.id);
+        }
+        await transaction.subgroup.delete({ where: { id: req.params.id } });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      res.json({ ok: true });
+    } catch (error) {
+      if (error instanceof SubgroupResourceAudienceConflictError) {
+        res.status(409).json({
+          error: "Il sottogruppo è l’unico destinatario di almeno una risorsa condivisa",
+          code: "SUBGROUP_RESOURCE_AUDIENCE_CONFLICT",
+        });
+        return;
+      }
+      throw error;
+    }
   })
 );
 

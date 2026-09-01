@@ -64,6 +64,7 @@ describe("fetchLinkPreview security boundary", () => {
   it.each([
     "file:///etc/passwd",
     "ftp://example.com/file",
+    "https://user:secret@example.com/private",
     "http://127.0.0.1",
     "http://[::1]",
     "http://[::127.0.0.1]",
@@ -114,6 +115,33 @@ describe("fetchLinkPreview security boundary", () => {
     );
   });
 
+  it("cancels redirect response bodies before following the next destination", async () => {
+    let cancelled = false;
+    const redirectBody = new ReadableStream({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const dependencies = previewDependencies([
+      new Response(redirectBody, { status: 302, headers: { location: "/final" } }),
+      new Response("<title>Final</title>", { headers: { "content-type": "text/html" } }),
+    ]);
+
+    await fetchLinkPreview("https://example.org", dependencies);
+
+    expect(cancelled).toBe(true);
+  });
+
+  it("treats deprecated 192.88.99.0/24 relay addresses as non-public", async () => {
+    const dependencies = previewDependencies([], async () => [
+      { address: "192.88.99.1", family: 4 },
+    ]);
+
+    await expect(fetchLinkPreview("https://example.org", dependencies)).rejects.toBeInstanceOf(
+      UnsafePreviewUrlError
+    );
+  });
+
   it("rejects non-HTML responses", async () => {
     const dependencies = previewDependencies([
       new Response('{"title":"not html"}', {
@@ -134,22 +162,76 @@ describe("fetchLinkPreview security boundary", () => {
     await expect(fetchLinkPreview("https://example.org", dependencies)).rejects.toThrow(/1 MiB/i);
   });
 
-  it("uses a manual HTML request with a five-second timeout", async () => {
-    const timeoutSignal = new AbortController().signal;
-    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutSignal);
+  it("uses one signal for DNS, redirects, transport, and body reads", async () => {
+    const signals: AbortSignal[] = [];
     const dependencies: LinkPreviewDependencies = {
       lookup: async () => PUBLIC_DNS_RESULT,
       fetch: async (_url, init) => {
         expect(init.redirect).toBe("manual");
-        expect(init.signal).toBe(timeoutSignal);
+        signals.push(init.signal as AbortSignal);
         expect(new Headers(init.headers).get("accept")).toBe("text/html");
-        return new Response("<html></html>", { headers: { "content-type": "text/html" } });
+        return signals.length === 1
+          ? new Response(null, { status: 302, headers: { location: "/final" } })
+          : new Response("<html></html>", { headers: { "content-type": "text/html" } });
       },
     };
 
     await fetchLinkPreview("https://example.org", dependencies);
 
-    expect(timeout).toHaveBeenCalledWith(5000);
+    expect(signals).toHaveLength(2);
+    expect(signals[0]).toBe(signals[1]);
+  });
+
+  it("bounds delayed DNS resolution with the overall deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const dependencies: LinkPreviewDependencies = {
+        lookup: () => new Promise(() => undefined),
+        fetch: async () => {
+          throw new Error("fetch must not start");
+        },
+      };
+      const pending = fetchLinkPreview("https://example.org", dependencies);
+      const rejection = expect(pending).rejects.toThrow(/timed out/i);
+
+      await vi.advanceTimersByTimeAsync(5001);
+
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("aborts a real delayed local transport within the configured overall deadline", async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "text/html" });
+      setTimeout(() => response.end("<title>Too late</title>"), 200);
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const dependencies: LinkPreviewDependencies = {
+        deadlineMs: 50,
+        lookup: async () => PUBLIC_DNS_RESULT,
+        fetch: (url, init) => fetchUsingValidatedAddresses(
+          url,
+          init,
+          [{ address: "127.0.0.1", family: 4 }]
+        ),
+      };
+
+      const startedAt = Date.now();
+      await expect(
+        fetchLinkPreview(`http://transport.example:${port}/preview`, dependencies)
+      ).rejects.toThrow(/timed out|abort/i);
+      expect(Date.now() - startedAt).toBeLessThan(180);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 });
 
@@ -173,7 +255,7 @@ describe("fetchLinkPreview metadata extraction", () => {
       finalUrl: "https://example.org/article",
       title: "Open day 2026",
       description: "Programma e prenotazioni",
-      imageUrl: "https://cdn.example.org/open-day.jpg",
+      imageUrl: null,
       siteName: "Rainerum",
     });
   });
@@ -190,7 +272,7 @@ describe("fetchLinkPreview metadata extraction", () => {
     });
   });
 
-  it("resolves relative Open Graph images against the final URL", async () => {
+  it("does not expose external Open Graph images to the browser", async () => {
     const dependencies = previewDependencies([
       new Response('<meta property="og:image" content="../images/open-day.jpg">', {
         headers: { "content-type": "text/html" },
@@ -198,8 +280,61 @@ describe("fetchLinkPreview metadata extraction", () => {
     ]);
 
     expect(await fetchLinkPreview("https://example.org/articles/open-day", dependencies)).toMatchObject({
-      imageUrl: "https://example.org/images/open-day.jpg",
+      imageUrl: null,
     });
+  });
+
+  it.each([
+    "data:image/png;base64,AAAA",
+    "file:///etc/passwd",
+    "ftp://images.example.org/open-day.jpg",
+    "https://user:secret@images.example.org/open-day.jpg",
+    "http://127.0.0.1/private.png",
+  ])("discards unsafe Open Graph image metadata %s", async (imageUrl) => {
+    const dependencies = previewDependencies([
+      new Response(`<meta property="og:image" content="${imageUrl}">`, {
+        headers: { "content-type": "text/html" },
+      }),
+    ]);
+
+    await expect(fetchLinkPreview("https://example.org/article", dependencies)).resolves.toMatchObject({
+      imageUrl: null,
+    });
+  });
+
+  it("resolves and rejects a private DNS destination in Open Graph image metadata", async () => {
+    const lookup = vi.fn(async (hostname: string) => hostname === "images.example.org"
+      ? [{ address: "10.0.0.8", family: 4 }]
+      : PUBLIC_DNS_RESULT
+    );
+    const dependencies = previewDependencies([
+      new Response('<meta property="og:image" content="https://images.example.org/private.png">', {
+        headers: { "content-type": "text/html" },
+      }),
+    ], lookup);
+
+    await expect(fetchLinkPreview("https://example.org/article", dependencies)).resolves.toMatchObject({
+      imageUrl: null,
+    });
+    expect(lookup).toHaveBeenCalledWith("images.example.org");
+  });
+
+  it("caps text metadata and discards oversized image metadata", async () => {
+    const dependencies = previewDependencies([
+      new Response(`
+        <meta property="og:title" content="${"t".repeat(200)}">
+        <meta property="og:description" content="${"d".repeat(600)}">
+        <meta property="og:site_name" content="${"s".repeat(200)}">
+        <meta property="og:image" content="https://images.example.org/${"i".repeat(2100)}.png">
+      `, { headers: { "content-type": "text/html" } }),
+    ]);
+
+    const preview = await fetchLinkPreview("https://example.org/article", dependencies);
+
+    expect(preview.title).toHaveLength(160);
+    expect(preview.description).toHaveLength(500);
+    expect(preview.siteName).toHaveLength(160);
+    expect(preview.imageUrl).toBeNull();
   });
 
   it("returns nulls when metadata is missing", async () => {

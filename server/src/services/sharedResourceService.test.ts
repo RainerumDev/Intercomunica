@@ -260,7 +260,7 @@ describe("shared resources", () => {
 });
 
 describe("preview persistence", () => {
-  it("persists secure preview provenance and a fetched timestamp instead of caller metadata", async () => {
+  it("preserves manual content while omitting external preview images from persistence", async () => {
     const repository = new FakeResourceRepository();
     const service = resourceService(repository, async () => ({
       finalUrl: "https://preview.example.org/article",
@@ -282,13 +282,13 @@ describe("preview persistence", () => {
     expect(created).toMatchObject({
       title: "Manual title",
       description: "Manual description",
-      previewImageUrl: "https://cdn.example.org/trusted-image.png",
+      previewImageUrl: null,
       previewSiteName: "Trusted site",
     });
     expect(created.previewFetchedAt).toBeInstanceOf(Date);
     expect(created.previewFetchedAt?.getTime()).toBeGreaterThanOrEqual(beforeCreate);
     expect(repository.resources[0]).toMatchObject({
-      previewImageUrl: "https://cdn.example.org/trusted-image.png",
+      previewImageUrl: null,
       previewSiteName: "Trusted site",
     });
   });
@@ -321,7 +321,7 @@ describe("preview persistence", () => {
 
     expect(updated).toMatchObject({
       url: "https://example.org/new",
-      previewImageUrl: "https://cdn.example.org/new.png",
+      previewImageUrl: null,
       previewSiteName: "New site",
     });
     expect(updated.previewFetchedAt).toBeInstanceOf(Date);

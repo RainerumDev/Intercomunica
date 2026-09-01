@@ -134,7 +134,9 @@ async function fetchedPreviewData(
   try {
     const preview = await fetchPreview(input.url);
     return {
-      previewImageUrl: preview.imageUrl,
+      // External images would be resolved again by the browser, outside the
+      // server's DNS-pinned preview boundary. Persist no browser-fetchable URL.
+      previewImageUrl: null,
       previewSiteName: preview.siteName,
       previewFetchedAt: new Date(),
     };

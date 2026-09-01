@@ -6,6 +6,10 @@ import { Readable } from "node:stream";
 
 const MAX_REDIRECTS = 3;
 const MAX_HTML_BYTES = 1024 * 1024;
+const MAX_IMAGE_URL_LENGTH = 2048;
+const MAX_TITLE_LENGTH = 160;
+const MAX_DESCRIPTION_LENGTH = 500;
+const MAX_SITE_NAME_LENGTH = 160;
 const REQUEST_TIMEOUT_MS = 5000;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
@@ -23,6 +27,7 @@ export type LinkPreviewLookupAddress = {
 };
 
 export type LinkPreviewDependencies = {
+  deadlineMs?: number;
   lookup: (hostname: string) => Promise<LinkPreviewLookupAddress[]>;
   fetch: (
     url: string,
@@ -132,6 +137,7 @@ function isPublicIpv4(address: string): boolean {
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 0 && c === 0) ||
     (a === 192 && b === 0 && c === 2) ||
+    (a === 192 && b === 88 && c === 99) ||
     (a === 192 && b === 168) ||
     (a === 198 && (b === 18 || b === 19)) ||
     (a === 198 && b === 51 && c === 100) ||
@@ -211,7 +217,8 @@ type ResolvedPublicHttpUrl = {
 
 async function resolvePublicHttpUrl(
   value: string,
-  lookup: LinkPreviewDependencies["lookup"]
+  lookup: LinkPreviewDependencies["lookup"],
+  signal?: AbortSignal
 ): Promise<ResolvedPublicHttpUrl> {
   let url: URL;
   try {
@@ -231,7 +238,7 @@ async function resolvePublicHttpUrl(
     return { url, addresses: [{ address: hostname, family: literalFamily }] };
   }
 
-  const addresses = await lookup(hostname);
+  const addresses = await withDeadline(lookup(hostname), signal);
   if (addresses.length === 0 || addresses.some(({ address }) => !isPublicAddress(address))) {
     throw new UnsafePreviewUrlError();
   }
@@ -249,7 +256,33 @@ export async function validatePublicHttpUrl(
   return (await resolvePublicHttpUrl(value, lookup)).url;
 }
 
-async function readBoundedHtml(response: Response): Promise<string> {
+function deadlineError(signal?: AbortSignal): Error {
+  if (signal?.reason instanceof Error) return signal.reason;
+  return new Error("Preview timed out");
+}
+
+function withDeadline<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return operation;
+  if (signal.aborted) return Promise.reject(deadlineError(signal));
+
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const settle = (complete: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", abort);
+      complete();
+    };
+    const abort = () => settle(() => reject(deadlineError(signal)));
+    signal.addEventListener("abort", abort, { once: true });
+    operation.then(
+      (value) => settle(() => resolve(value)),
+      (error: unknown) => settle(() => reject(error))
+    );
+  });
+}
+
+async function readBoundedHtml(response: Response, signal: AbortSignal): Promise<string> {
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > MAX_HTML_BYTES) {
     throw new Error("Preview HTML exceeds 1 MiB");
@@ -261,15 +294,21 @@ async function readBoundedHtml(response: Response): Promise<string> {
   let bytesRead = 0;
   let html = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    bytesRead += value.byteLength;
-    if (bytesRead > MAX_HTML_BYTES) {
-      await reader.cancel();
-      throw new Error("Preview HTML exceeds 1 MiB");
+  try {
+    while (true) {
+      const { done, value } = await withDeadline(reader.read(), signal);
+      if (done) break;
+      bytesRead += value.byteLength;
+      if (bytesRead > MAX_HTML_BYTES) {
+        throw new Error("Preview HTML exceeds 1 MiB");
+      }
+      html += decoder.decode(value, { stream: true });
     }
-    html += decoder.decode(value, { stream: true });
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
   }
 
   return html + decoder.decode();
@@ -309,10 +348,10 @@ function decodeHtmlEntities(value: string): string {
   });
 }
 
-function normalizeMetadata(value: string | undefined): string | null {
+function normalizeMetadata(value: string | undefined, maxLength: number): string | null {
   if (value === undefined) return null;
   const normalized = decodeHtmlEntities(value).replace(/\s+/g, " ").trim();
-  return normalized || null;
+  return normalized ? normalized.slice(0, maxLength) : null;
 }
 
 function attributesForTag(tag: string): Record<string, string> {
@@ -326,7 +365,34 @@ function attributesForTag(tag: string): Record<string, string> {
   return attributes;
 }
 
-function extractMetadata(html: string, finalUrl: string): Omit<LinkPreview, "finalUrl"> {
+async function safePreviewImageUrl(
+  value: string | undefined,
+  finalUrl: string,
+  dependencies: LinkPreviewDependencies,
+  signal: AbortSignal
+): Promise<string | null> {
+  const image = normalizeMetadata(value, MAX_IMAGE_URL_LENGTH + 1);
+  if (!image || image.length > MAX_IMAGE_URL_LENGTH) return null;
+
+  try {
+    const resolved = new URL(image, finalUrl).toString();
+    await resolvePublicHttpUrl(resolved, dependencies.lookup, signal);
+  } catch {
+    if (signal.aborted) throw deadlineError(signal);
+    return null;
+  }
+
+  // A later browser request performs fresh DNS resolution that this server cannot pin.
+  // Keep the public-only guarantee by never exposing an external image URL to clients.
+  return null;
+}
+
+async function extractMetadata(
+  html: string,
+  finalUrl: string,
+  dependencies: LinkPreviewDependencies,
+  signal: AbortSignal
+): Promise<Omit<LinkPreview, "finalUrl">> {
   const openGraph = new Map<string, string>();
   const metaTagPattern = /<meta\b(?:"[^"]*"|'[^']*'|[^'">])*>/gi;
 
@@ -339,22 +405,22 @@ function extractMetadata(html: string, finalUrl: string): Omit<LinkPreview, "fin
   }
 
   const titleElement = html.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i)?.[1];
-  const title = normalizeMetadata(openGraph.get("og:title") ?? titleElement?.replace(/<[^>]*>/g, ""));
-  const image = normalizeMetadata(openGraph.get("og:image"));
-  let imageUrl: string | null = null;
-  if (image) {
-    try {
-      imageUrl = new URL(image, finalUrl).toString();
-    } catch {
-      imageUrl = null;
-    }
-  }
+  const title = normalizeMetadata(
+    openGraph.get("og:title") ?? titleElement?.replace(/<[^>]*>/g, ""),
+    MAX_TITLE_LENGTH
+  );
+  const imageUrl = await safePreviewImageUrl(
+    openGraph.get("og:image"),
+    finalUrl,
+    dependencies,
+    signal
+  );
 
   return {
     title,
-    description: normalizeMetadata(openGraph.get("og:description")),
+    description: normalizeMetadata(openGraph.get("og:description"), MAX_DESCRIPTION_LENGTH),
     imageUrl,
-    siteName: normalizeMetadata(openGraph.get("og:site_name")),
+    siteName: normalizeMetadata(openGraph.get("og:site_name"), MAX_SITE_NAME_LENGTH),
   };
 }
 
@@ -364,46 +430,62 @@ export async function fetchLinkPreview(
 ): Promise<LinkPreview> {
   let currentUrl = value;
   let redirects = 0;
+  const deadline = new AbortController();
+  const timeout = setTimeout(
+    () => deadline.abort(new Error("Preview timed out")),
+    dependencies.deadlineMs ?? REQUEST_TIMEOUT_MS
+  );
+  timeout.unref?.();
 
-  while (true) {
-    const { url: validatedUrl, addresses } = await resolvePublicHttpUrl(
-      currentUrl,
-      dependencies.lookup
-    );
-    const response = await dependencies.fetch(validatedUrl.toString(), {
-      redirect: "manual",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      headers: { Accept: "text/html" },
-    }, addresses);
+  try {
+    while (true) {
+      const { url: validatedUrl, addresses } = await resolvePublicHttpUrl(
+        currentUrl,
+        dependencies.lookup,
+        deadline.signal
+      );
+      const response = await withDeadline(dependencies.fetch(validatedUrl.toString(), {
+        redirect: "manual",
+        signal: deadline.signal,
+        headers: { Accept: "text/html" },
+      }, addresses), deadline.signal);
 
-    try {
-      if (REDIRECT_STATUSES.has(response.status)) {
-        const location = response.headers.get("location");
-        if (!location) throw new Error("Preview redirect is missing a location");
-        if (redirects >= MAX_REDIRECTS) throw new Error("Preview exceeded three redirects");
-        currentUrl = new URL(location, validatedUrl).toString();
-        redirects++;
-        continue;
-      }
+      try {
+        if (REDIRECT_STATUSES.has(response.status)) {
+          const location = response.headers.get("location");
+          if (!location) throw new Error("Preview redirect is missing a location");
+          if (redirects >= MAX_REDIRECTS) throw new Error("Preview exceeded three redirects");
+          currentUrl = new URL(location, validatedUrl).toString();
+          redirects++;
+          continue;
+        }
 
-      if (!response.ok) throw new Error(`Preview request failed with status ${response.status}`);
-      const contentType = response.headers.get("content-type")
-        ?.split(";", 1)[0]
-        .trim()
-        .toLowerCase();
-      if (contentType !== "text/html" && contentType !== "application/xhtml+xml") {
-        throw new Error("Preview response is not HTML");
-      }
+        if (!response.ok) throw new Error(`Preview request failed with status ${response.status}`);
+        const contentType = response.headers.get("content-type")
+          ?.split(";", 1)[0]
+          .trim()
+          .toLowerCase();
+        if (contentType !== "text/html" && contentType !== "application/xhtml+xml") {
+          throw new Error("Preview response is not HTML");
+        }
 
-      const html = await readBoundedHtml(response);
-      return {
-        finalUrl: validatedUrl.toString(),
-        ...extractMetadata(html, validatedUrl.toString()),
-      };
-    } finally {
-      if (response.body && !response.body.locked) {
-        await response.body.cancel().catch(() => undefined);
+        const html = await readBoundedHtml(response, deadline.signal);
+        return {
+          finalUrl: validatedUrl.toString(),
+          ...await extractMetadata(
+            html,
+            validatedUrl.toString(),
+            dependencies,
+            deadline.signal
+          ),
+        };
+      } finally {
+        if (response.body && !response.body.locked) {
+          await response.body.cancel().catch(() => undefined);
+        }
       }
     }
+  } finally {
+    clearTimeout(timeout);
   }
 }

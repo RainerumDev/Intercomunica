@@ -35,6 +35,18 @@ function handleResourceError(error: unknown, res: Response): void {
     res.status(409).json({ error: "Ordine delle risorse non valido" });
     return;
   }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "P2003"
+  ) {
+    res.status(409).json({
+      error: "Uno o più sottogruppi selezionati non esistono più",
+      code: "RESOURCE_AUDIENCE_CONFLICT",
+    });
+    return;
+  }
   throw error;
 }
 
@@ -68,7 +80,11 @@ resourcesRouter.post(
   h(async (req, res) => {
     const body = parseBody(resourceInputSchema, req, res);
     if (!body) return;
-    res.status(201).json(await createResource(body));
+    try {
+      res.status(201).json(await createResource(body));
+    } catch (error) {
+      handleResourceError(error, res);
+    }
   })
 );
 

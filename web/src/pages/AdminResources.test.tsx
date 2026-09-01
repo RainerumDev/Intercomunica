@@ -3,7 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { adminResourcesApi, api } from "../api";
+import { adminResourcesApi, api, ApiError } from "../api";
 import type { SharedResource, Subgroup } from "../types";
 import AdminResources from "./AdminResources";
 
@@ -80,6 +80,24 @@ describe("AdminResources", () => {
     ]);
   });
 
+  it("refreshes authoritative order after a stale reorder conflict", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminResourcesApi, "list")
+      .mockResolvedValueOnce([first, second, third])
+      .mockResolvedValueOnce([third, first]);
+    vi.spyOn(adminResourcesApi, "reorder").mockRejectedValue(
+      new ApiError(409, "Ordine delle risorse non valido")
+    );
+    render(<AdminResources />);
+
+    const cards = await screen.findAllByRole("article");
+    await user.click(within(cards[1]).getByRole("button", { name: "Sposta su" }));
+
+    await waitFor(() => expect(
+      screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent)
+    ).toEqual(["Terza", "Prima"]));
+  });
+
   it("removes a deleted item immediately and keeps it gone when the refresh fails", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -149,6 +167,80 @@ describe("AdminResources", () => {
     expect(screen.queryByRole("heading", { name: "Prima" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Modifica risorsa" })).toBeNull();
     expect(screen.getAllByRole("article")).toHaveLength(1);
+  });
+
+  it("uses the page mutation lock to prevent reorder and other actions during create", async () => {
+    const user = userEvent.setup();
+    const create = deferred<SharedResource>();
+    vi.spyOn(adminResourcesApi, "list").mockResolvedValue([first, second]);
+    vi.spyOn(adminResourcesApi, "create").mockReturnValue(create.promise);
+    const reorder = vi.spyOn(adminResourcesApi, "reorder").mockResolvedValue([second, first]);
+    render(<AdminResources />);
+
+    await user.click(await screen.findByRole("button", { name: "Nuova risorsa" }));
+    await user.type(screen.getByRole("textbox", { name: "URL" }), "https://created.example.org");
+    await user.type(screen.getByRole("textbox", { name: "Titolo" }), "Creazione in corso");
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+
+    const firstCard = screen.getByRole("heading", { name: "Prima" }).closest("article");
+    if (!firstCard) throw new Error("First resource card not found");
+    const moveDown = within(firstCard).getByRole("button", { name: "Sposta giù" }) as HTMLButtonElement;
+    expect(moveDown.disabled).toBe(true);
+    expect((within(firstCard).getByRole("button", { name: "Modifica" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(firstCard).getByRole("button", { name: "Elimina" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Annulla" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(moveDown);
+    expect(reorder).not.toHaveBeenCalled();
+
+    await act(async () => create.resolve(resource("created", "Creata", 2)));
+    expect(await screen.findByRole("heading", { name: "Creata" })).toBeTruthy();
+  });
+
+  it("uses the page mutation lock to prevent reorder and other actions during update", async () => {
+    const user = userEvent.setup();
+    const update = deferred<SharedResource>();
+    vi.spyOn(adminResourcesApi, "list").mockResolvedValue([first, second]);
+    vi.spyOn(adminResourcesApi, "update").mockReturnValue(update.promise);
+    const reorder = vi.spyOn(adminResourcesApi, "reorder").mockResolvedValue([second, first]);
+    render(<AdminResources />);
+
+    const cards = await screen.findAllByRole("article");
+    await user.click(within(cards[0]).getByRole("button", { name: "Modifica" }));
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+
+    const moveDown = within(cards[0]).getByRole("button", { name: "Sposta giù" }) as HTMLButtonElement;
+    expect(moveDown.disabled).toBe(true);
+    expect((within(cards[1]).getByRole("button", { name: "Modifica" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(cards[1]).getByRole("button", { name: "Elimina" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(moveDown);
+    expect(reorder).not.toHaveBeenCalled();
+
+    await act(async () => update.resolve({ ...first, title: "Prima aggiornata" }));
+    expect(await screen.findByRole("heading", { name: "Prima aggiornata" })).toBeTruthy();
+  });
+
+  it("refreshes authoritative state after an audience conflict without losing the draft", async () => {
+    const user = userEvent.setup();
+    const authoritative = { ...first, title: "Prima autoritativa" };
+    vi.spyOn(adminResourcesApi, "list")
+      .mockResolvedValueOnce([first, second])
+      .mockResolvedValueOnce([authoritative]);
+    vi.spyOn(adminResourcesApi, "update").mockRejectedValue(
+      new ApiError(409, "Uno o più sottogruppi selezionati non esistono più", "RESOURCE_AUDIENCE_CONFLICT")
+    );
+    render(<AdminResources />);
+
+    const cards = await screen.findAllByRole("article");
+    await user.click(within(cards[0]).getByRole("button", { name: "Modifica" }));
+    const title = screen.getByRole("textbox", { name: "Titolo" });
+    await user.clear(title);
+    await user.type(title, "Bozza preservata");
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("non esistono più");
+    expect((screen.getByRole("textbox", { name: "Titolo" }) as HTMLInputElement).value).toBe("Bozza preservata");
+    expect(await screen.findByRole("heading", { name: "Prima autoritativa" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Seconda" })).toBeNull();
   });
 
   it("keeps remaining resource controls disabled until the post-delete refresh settles", async () => {

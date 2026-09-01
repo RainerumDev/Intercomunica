@@ -154,6 +154,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
             <input
               id="resource-url"
               type="url"
+              disabled={disabled || saving}
               value={draft.url}
               onChange={(event) => setUrl(event.target.value)}
               aria-invalid={validationAttempted && Boolean(urlError)}
@@ -183,6 +184,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
         <label className="flex items-center gap-2 text-sm text-gray-700">
           <input
             type="checkbox"
+            disabled={disabled || saving}
             checked={draft.previewEnabled}
             onChange={(event) => set("previewEnabled", event.target.checked)}
           />
@@ -195,6 +197,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
           </label>
           <input
             id="resource-title"
+            disabled={disabled || saving}
             value={draft.title}
             onChange={(event) => set("title", event.target.value)}
             aria-invalid={validationAttempted && Boolean(titleError)}
@@ -213,6 +216,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
           </label>
           <textarea
             id="resource-description"
+            disabled={disabled || saving}
             value={draft.description ?? ""}
             onChange={(event) => set("description", event.target.value || null)}
             maxLength={500}
@@ -224,6 +228,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
         <label className="flex items-center gap-2 text-sm text-gray-700">
           <input
             type="checkbox"
+            disabled={disabled || saving}
             checked={draft.isGlobal}
             onChange={(event) => set("isGlobal", event.target.checked)}
           />
@@ -247,6 +252,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
                       <label key={subgroup.id} className="flex items-center gap-2 text-sm text-gray-700">
                         <input
                           type="checkbox"
+                          disabled={disabled || saving}
                           checked={draft.subgroupIds.includes(subgroup.id)}
                           onChange={() => toggleSubgroup(subgroup.id)}
                         />
