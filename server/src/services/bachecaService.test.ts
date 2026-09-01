@@ -1,5 +1,18 @@
 import { describe, it, expect } from "vitest";
+import { Prisma } from "@prisma/client";
 import type { SectionInputEvent } from "./bachecaService.js";
+
+it("exposes the shared-resource persistence contract", () => {
+  const resource = Prisma.dmmf.datamodel.models.find((model) => model.name === "SharedResource");
+  expect(resource?.fields.map((field) => field.name)).toEqual(expect.arrayContaining([
+    "id", "url", "title", "description", "previewEnabled", "previewImageUrl",
+    "previewSiteName", "isGlobal", "sortOrder", "previewFetchedAt",
+    "createdAt", "updatedAt", "subgroups",
+  ]));
+
+  const subgroup = Prisma.dmmf.datamodel.models.find((model) => model.name === "Subgroup");
+  expect(subgroup?.fields.map((field) => field.name)).toEqual(expect.arrayContaining(["resources"]));
+});
 
 let counter = 0;
 function ev(overrides: Partial<SectionInputEvent> & { tagNames?: string[] }): SectionInputEvent {
