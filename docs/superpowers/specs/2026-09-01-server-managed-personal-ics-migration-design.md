@@ -78,16 +78,16 @@ The local part is normalized to lowercase and restricted to URL-safe letters, di
 
 Including the local part deliberately exposes that portion of the institutional address to anyone who receives the link. This is an accepted product requirement; the secret still prevents discovery of the feed contents.
 
-The secret contains at least 256 bits from a cryptographically secure random generator and is base64url encoded. The entire path token, excluding `.ics`, is SHA-256 hashed for indexed feed lookup. To show the same stable URL again to its owner, the secret is also stored encrypted with the application's existing encryption key. Plain token values are never stored.
+The secret contains at least 256 bits from a cryptographically secure random generator and is base64url encoded. The entire path token, excluding `.ics`, is SHA-256 hashed for indexed feed lookup. To show the same stable URL again to its owner even if account metadata later changes, the complete path token is also stored encrypted with the application's existing encryption key. Plain token values are never stored.
 
 Add nullable user fields for:
 
 - unique token hash;
-- encrypted token secret;
+- encrypted complete path token;
 - token issue time;
 - most recent successful fetch time.
 
-The token is created lazily when an eligible signed-in user first requests calendar links. An authenticated rotation action replaces the hash and encrypted secret atomically; the old URL immediately stops working.
+The token is created lazily when an eligible signed-in user first requests calendar links. An authenticated rotation action replaces the hash and encrypted token atomically; the old URL immediately stops working.
 
 ### Feed authorization
 
@@ -125,14 +125,14 @@ This mirrors the former personal Google calendar behavior. The general Google Ca
 Each `VEVENT` includes:
 
 - stable `UID` based on the Intercomunica event ID and application domain;
-- `DTSTAMP` and `LAST-MODIFIED`;
+- deterministic `DTSTAMP` and `LAST-MODIFIED` values based on the event's `updatedAt`, so an unchanged feed produces an unchanged body;
 - summary, description, and location with standards-compliant escaping;
 - UTC date-times for timed events;
 - date-only, exclusive-end values for all-day events.
 
 The calendar includes a stable product identifier, display name, source URL, and a suggested refresh interval. Client applications remain free to choose their actual refresh frequency.
 
-The response computes a strong content `ETag` and sends `Cache-Control: private, no-cache`. A matching `If-None-Match` returns `304` with no body. Successful full responses update the user's last-fetch time. The initial implementation returns all matching database events so clients receive a complete authoritative snapshot; range trimming is deferred unless measured feed size requires it.
+The response computes a strong content `ETag` and sends `Cache-Control: private, no-cache`. A matching `If-None-Match` returns `304` with no body. Successful `200` and `304` responses update the user's last-fetch time. The initial implementation returns all matching database events so clients receive a complete authoritative snapshot; range trimming is deferred unless measured feed size requires it.
 
 ## Calendar links API and Bacheca
 
