@@ -20,7 +20,7 @@ describe("resource form helpers", () => {
     });
   });
 
-  it("trims fields, deduplicates subgroups, and clears global recipients", () => {
+  it("trims text, drops external preview images, deduplicates subgroups, and clears global recipients", () => {
     expect(normalizeResourceDraft({
       ...emptyResourceDraft,
       url: " https://www.example.org/guide ",
@@ -36,7 +36,7 @@ describe("resource form helpers", () => {
       title: "A guide",
       description: "description",
       previewEnabled: true,
-      previewImageUrl: "https://example.org/image.png",
+      previewImageUrl: null,
       previewSiteName: "Example",
       isGlobal: false,
       subgroupIds: ["g1", "g2"],

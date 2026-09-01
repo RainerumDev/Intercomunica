@@ -39,6 +39,18 @@ function handleResourceError(error: unknown, res: Response): void {
     typeof error === "object" &&
     error !== null &&
     "code" in error &&
+    error.code === "P2034"
+  ) {
+    res.status(409).json({
+      error: "La raccolta delle risorse è cambiata durante l’operazione",
+      code: "RESOURCE_COLLECTION_CONFLICT",
+    });
+    return;
+  }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
     error.code === "P2003"
   ) {
     res.status(409).json({

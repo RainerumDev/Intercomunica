@@ -123,7 +123,10 @@ async function finishConcurrencyTest({
   ));
 
   if (failures.length > 0) {
-    throw new AggregateError(failures, "Concurrency test or teardown failed");
+    const details = failures.map((failure) =>
+      failure instanceof Error ? `${failure.name}: ${failure.message}` : String(failure)
+    ).join("; ");
+    throw new AggregateError(failures, `Concurrency test or teardown failed: ${details}`);
   }
 }
 
@@ -427,6 +430,160 @@ describe("shared-resource audience concurrency", () => {
         resourceUrl,
         subgroupIds: [oldGroupId, newGroupId],
         clients: [observer, blockerClient, updateClient, deleteClient],
+      });
+    }
+  }, 10_000);
+
+  it("serializes two concurrent complete reorders without duplicate or non-normalized positions", async () => {
+    const token = Math.random().toString(16).slice(2, 10);
+    const suffix = `reorder-${Date.now()}-${token}`;
+    const firstApplication = `ic-${token}-order-a`;
+    const secondApplication = `ic-${token}-order-b`;
+    const resourceUrl = `https://example.org/${suffix}`;
+    const observer = client(`ic-${token}-observer`);
+    const blockerClient = client(`ic-${token}-blocker`);
+    const firstClient = client(firstApplication);
+    const secondClient = client(secondApplication);
+    const release = deferred();
+    let blocker: Promise<void> | undefined;
+    const operations: Promise<unknown>[] = [];
+    let primaryError: unknown;
+
+    try {
+      await observer.sharedResource.createMany({
+        data: [
+          { url: resourceUrl, title: "First", previewEnabled: false, isGlobal: true, sortOrder: 0 },
+          { url: resourceUrl, title: "Second", previewEnabled: false, isGlobal: true, sortOrder: 1 },
+          { url: resourceUrl, title: "Third", previewEnabled: false, isGlobal: true, sortOrder: 2 },
+        ],
+      });
+      const resources = await observer.sharedResource.findMany({
+        where: { url: resourceUrl },
+        orderBy: { sortOrder: "asc" },
+      });
+      const ids = resources.map((resource) => resource.id);
+      const firstOrder = [ids[2]!, ids[0]!, ids[1]!];
+      const secondOrder = [ids[2]!, ids[1]!, ids[0]!];
+
+      const blockerReady = deferred();
+      blocker = blockerClient.$transaction(async (transaction) => {
+        await transaction.$queryRaw`SELECT id FROM "SharedResource" WHERE url = ${resourceUrl} FOR UPDATE`;
+        blockerReady.resolve();
+        await release.promise;
+      });
+      await blockerReady.promise;
+
+      const firstService = createSharedResourceService(createPrismaSharedResourceRepository(firstClient));
+      const secondService = createSharedResourceService(createPrismaSharedResourceRepository(secondClient));
+      const firstOutcome = tracked(firstService.reorderResources(firstOrder));
+      const secondOutcome = tracked(secondService.reorderResources(secondOrder));
+      operations.push(firstOutcome, secondOutcome);
+
+      await waitForBlockedClients(observer, [firstApplication, secondApplication]);
+      release.resolve();
+      await blocker;
+
+      const outcomes = await Promise.all([firstOutcome, secondOutcome]);
+      const rejected = outcomes.find((outcome) => outcome.status === "rejected");
+      if (rejected?.status === "rejected") throw rejected.reason;
+
+      const persisted = await observer.sharedResource.findMany({
+        where: { url: resourceUrl },
+        orderBy: { sortOrder: "asc" },
+      });
+      expect(persisted.map((resource) => resource.sortOrder)).toEqual([0, 1, 2]);
+      expect(new Set(persisted.map((resource) => resource.id)).size).toBe(3);
+      expect([firstOrder, secondOrder]).toContainEqual(persisted.map((resource) => resource.id));
+    } catch (error) {
+      primaryError = error;
+    } finally {
+      await finishConcurrencyTest({
+        primaryError,
+        release: release.resolve,
+        operations,
+        blocker,
+        observer,
+        resourceUrl,
+        subgroupIds: [],
+        clients: [observer, blockerClient, firstClient, secondClient],
+      });
+    }
+  }, 10_000);
+
+  it("serializes reorder against delete and leaves a complete normalized collection", async () => {
+    const token = Math.random().toString(16).slice(2, 10);
+    const suffix = `order-delete-${Date.now()}-${token}`;
+    const reorderApplication = `ic-${token}-order`;
+    const deleteApplication = `ic-${token}-delete`;
+    const resourceUrl = `https://example.org/${suffix}`;
+    const observer = client(`ic-${token}-observer`);
+    const blockerClient = client(`ic-${token}-blocker`);
+    const reorderClient = client(reorderApplication);
+    const deleteClient = client(deleteApplication);
+    const release = deferred();
+    let blocker: Promise<void> | undefined;
+    const operations: Promise<unknown>[] = [];
+    let primaryError: unknown;
+
+    try {
+      await observer.sharedResource.createMany({
+        data: [
+          { url: resourceUrl, title: "First", previewEnabled: false, isGlobal: true, sortOrder: 0 },
+          { url: resourceUrl, title: "Second", previewEnabled: false, isGlobal: true, sortOrder: 1 },
+          { url: resourceUrl, title: "Third", previewEnabled: false, isGlobal: true, sortOrder: 2 },
+        ],
+      });
+      const resources = await observer.sharedResource.findMany({
+        where: { url: resourceUrl },
+        orderBy: { sortOrder: "asc" },
+      });
+      const ids = resources.map((resource) => resource.id);
+
+      const blockerReady = deferred();
+      blocker = blockerClient.$transaction(async (transaction) => {
+        await transaction.$queryRaw`SELECT id FROM "SharedResource" WHERE url = ${resourceUrl} FOR UPDATE`;
+        blockerReady.resolve();
+        await release.promise;
+      });
+      await blockerReady.promise;
+
+      const reorderService = createSharedResourceService(createPrismaSharedResourceRepository(reorderClient));
+      const deleteService = createSharedResourceService(createPrismaSharedResourceRepository(deleteClient));
+      const reorderOutcome = tracked(reorderService.reorderResources([ids[1]!, ids[2]!, ids[0]!]));
+      operations.push(reorderOutcome);
+      await waitForBlockedClients(observer, [reorderApplication]);
+      const deleteOutcome = tracked(deleteService.deleteResource(ids[1]!));
+      operations.push(deleteOutcome);
+      await waitForBlockedClients(observer, [deleteApplication]);
+      release.resolve();
+      await blocker;
+
+      const [reordered, deleted] = await Promise.all([reorderOutcome, deleteOutcome]);
+      if (deleted.status === "rejected") throw deleted.reason;
+      if (reordered.status === "rejected") {
+        expect(reordered.reason).toMatchObject({ name: "InvalidResourceOrderError" });
+      }
+
+      const persisted = await observer.sharedResource.findMany({
+        where: { url: resourceUrl },
+        orderBy: { sortOrder: "asc" },
+      });
+      expect(persisted).toHaveLength(2);
+      expect(persisted.map((resource) => resource.sortOrder)).toEqual([0, 1]);
+      expect(new Set(persisted.map((resource) => resource.id)).size).toBe(2);
+      expect(persisted.map((resource) => resource.id)).not.toContain(ids[1]);
+    } catch (error) {
+      primaryError = error;
+    } finally {
+      await finishConcurrencyTest({
+        primaryError,
+        release: release.resolve,
+        operations,
+        blocker,
+        observer,
+        resourceUrl,
+        subgroupIds: [],
+        clients: [observer, blockerClient, reorderClient, deleteClient],
       });
     }
   }, 10_000);

@@ -18,7 +18,7 @@ export function normalizeResourceDraft(draft: SharedResourceDraft): SharedResour
     title: draft.title.trim(),
     description,
     previewEnabled: draft.previewEnabled,
-    previewImageUrl: draft.previewEnabled ? (draft.previewImageUrl?.trim() || null) : null,
+    previewImageUrl: null,
     previewSiteName: draft.previewEnabled ? (draft.previewSiteName?.trim() || null) : null,
     isGlobal: draft.isGlobal,
     subgroupIds: draft.isGlobal

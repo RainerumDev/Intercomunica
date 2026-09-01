@@ -94,8 +94,32 @@ describe("AdminResources", () => {
     await user.click(within(cards[1]).getByRole("button", { name: "Sposta su" }));
 
     await waitFor(() => expect(
-      screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent)
+      screen.getAllByRole("article").map((card) => within(card).getByRole("heading", { level: 3 }).textContent)
     ).toEqual(["Terza", "Prima"]));
+  });
+
+  it("treats a reorder 404 as an authoritative collection conflict", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminResourcesApi, "list")
+      .mockResolvedValueOnce([first, second, third])
+      .mockResolvedValueOnce([third, first]);
+    vi.spyOn(adminResourcesApi, "reorder").mockRejectedValue(
+      new ApiError(404, "Risorsa non trovata")
+    );
+    render(<AdminResources />);
+
+    const cards = await screen.findAllByRole("article");
+    await user.click(within(cards[1]).getByRole("button", { name: "Modifica" }));
+    expect(screen.getByRole("heading", { name: "Modifica risorsa" })).toBeTruthy();
+    await user.click(within(cards[1]).getByRole("button", { name: "Sposta su" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("raccolta è cambiata");
+    await waitFor(() => expect(
+      screen.getAllByRole("link").map((link) =>
+        within(link).getByRole("heading", { level: 3 }).textContent
+      )
+    ).toEqual(["Terza", "Prima"]));
+    expect(screen.queryByRole("heading", { name: "Modifica risorsa" })).toBeNull();
   });
 
   it("removes a deleted item immediately and keeps it gone when the refresh fails", async () => {
@@ -167,6 +191,45 @@ describe("AdminResources", () => {
     expect(screen.queryByRole("heading", { name: "Prima" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Modifica risorsa" })).toBeNull();
     expect(screen.getAllByRole("article")).toHaveLength(1);
+  });
+
+  it("retires a missing edited resource and keeps an accessible explanation after update 404", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminResourcesApi, "list")
+      .mockResolvedValueOnce([first, second])
+      .mockResolvedValueOnce([second]);
+    vi.spyOn(adminResourcesApi, "update").mockRejectedValue(
+      new ApiError(404, "Risorsa non trovata")
+    );
+    render(<AdminResources />);
+
+    const cards = await screen.findAllByRole("article");
+    await user.click(within(cards[0]).getByRole("button", { name: "Modifica" }));
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("non esiste più");
+    expect(screen.queryByRole("heading", { name: "Modifica risorsa" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Prima" })).toBeNull();
+    expect(await screen.findByRole("heading", { name: "Seconda" })).toBeTruthy();
+  });
+
+  it("retires a missing card and refreshes the collection after delete 404", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(adminResourcesApi, "list")
+      .mockResolvedValueOnce([first, second])
+      .mockResolvedValueOnce([second]);
+    vi.spyOn(adminResourcesApi, "remove").mockRejectedValue(
+      new ApiError(404, "Risorsa non trovata")
+    );
+    render(<AdminResources />);
+
+    const cards = await screen.findAllByRole("article");
+    await user.click(within(cards[0]).getByRole("button", { name: "Elimina" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("non esiste più");
+    expect(screen.queryByRole("heading", { name: "Prima" })).toBeNull();
+    expect(await screen.findByRole("heading", { name: "Seconda" })).toBeTruthy();
   });
 
   it("uses the page mutation lock to prevent reorder and other actions during create", async () => {

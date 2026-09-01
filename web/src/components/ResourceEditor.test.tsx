@@ -86,7 +86,7 @@ describe("ResourceEditor", () => {
       title: "Titolo modificato",
       description: "Descrizione modificata",
       previewEnabled: true,
-      previewImageUrl: "https://images.example.org/preview.png",
+      previewImageUrl: null,
       previewSiteName: "Sito iniziale",
       isGlobal: false,
       subgroupIds: ["retained"],
@@ -215,6 +215,110 @@ describe("ResourceEditor", () => {
     await act(async () => pending.resolve(preview("Retrieved", "https://resource.example.org/final")));
 
     expect(previewToggle.checked).toBe(false);
+  });
+
+  it("clears server preview metadata on URL change and ignores the delayed response", async () => {
+    const user = userEvent.setup();
+    const pending = deferred<ResourcePreview>();
+    const onSave = vi.fn(async () => {});
+    vi.spyOn(adminResourcesApi, "preview").mockReturnValue(pending.promise);
+
+    render(
+      <ResourceEditor
+        initialDraft={{
+          ...emptyResourceDraft,
+          url: "https://old.example.org/page",
+          title: "Titolo manuale",
+          previewEnabled: true,
+          previewImageUrl: "https://images.example.org/old.png",
+          previewSiteName: "Old site",
+        }}
+        subgroups={[]}
+        onSave={onSave}
+        onCancel={() => {}}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Genera anteprima" }));
+    const url = screen.getByRole("textbox", { name: "URL" });
+    await user.clear(url);
+    await user.type(url, "https://new.example.org/page");
+
+    expect(screen.queryByText("Old site")).toBeNull();
+    expect(screen.getByText("new.example.org")).toBeTruthy();
+    await act(async () => pending.resolve({
+      ...preview("Delayed", "https://old.example.org/final"),
+      imageUrl: "https://images.example.org/delayed.png",
+    }));
+    expect(screen.queryByText("Delayed site")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      url: "https://new.example.org/page",
+      previewImageUrl: null,
+      previewSiteName: null,
+    }));
+  });
+
+  it("clears preview metadata when preview is disabled and a pending response cannot restore it", async () => {
+    const user = userEvent.setup();
+    const pending = deferred<ResourcePreview>();
+    const onSave = vi.fn(async () => {});
+    vi.spyOn(adminResourcesApi, "preview").mockReturnValue(pending.promise);
+
+    render(
+      <ResourceEditor
+        initialDraft={{
+          ...emptyResourceDraft,
+          url: "https://resource.example.org/page",
+          title: "Titolo manuale",
+          previewEnabled: true,
+          previewImageUrl: "https://images.example.org/old.png",
+          previewSiteName: "Old site",
+        }}
+        subgroups={[]}
+        onSave={onSave}
+        onCancel={() => {}}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Genera anteprima" }));
+    await user.click(screen.getByRole("checkbox", { name: "Mostra anteprima" }));
+    expect(screen.queryByText("Old site")).toBeNull();
+    expect(screen.getByText("resource.example.org")).toBeTruthy();
+
+    await act(async () => pending.resolve({
+      ...preview("Delayed", "https://resource.example.org/final"),
+      imageUrl: "https://images.example.org/delayed.png",
+    }));
+    expect(screen.queryByText("Delayed site")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      previewEnabled: false,
+      previewImageUrl: null,
+      previewSiteName: null,
+    }));
+  });
+
+  it("never renders a remote preview image in the live card", () => {
+    render(
+      <ResourceEditor
+        initialDraft={{
+          ...emptyResourceDraft,
+          url: "https://resource.example.org/page",
+          title: "Titolo",
+          previewEnabled: true,
+          previewImageUrl: "https://images.example.org/preview.png",
+          previewSiteName: "Example",
+        }}
+        subgroups={[]}
+        onSave={async () => {}}
+        onCancel={() => {}}
+      />
+    );
+
+    expect(document.querySelector("img")).toBeNull();
   });
 
   it("preserves title clearing and description edits made while preview is pending", async () => {

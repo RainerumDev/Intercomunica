@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import type { Prisma } from "@prisma/client";
+import { describe, expect, it, vi } from "vitest";
 import {
+  createPrismaSharedResourceRepository,
   createSharedResourceService,
   resourceInputSchema,
   resourceOrderSchema,
@@ -179,6 +181,28 @@ describe("resourceInputSchema", () => {
 });
 
 describe("shared resources", () => {
+  it("runs generic resource transactions with Serializable P2034 retry", async () => {
+    const transactionClient = {} as Prisma.TransactionClient;
+    const rootClient = {
+      sharedResource: {},
+      subgroupMember: {},
+      $transaction: vi.fn()
+        .mockRejectedValueOnce(Object.assign(new Error("write conflict"), { code: "P2034" }))
+        .mockImplementationOnce(async (
+          work: (transaction: Prisma.TransactionClient) => Promise<unknown>
+        ) => work(transactionClient)),
+    };
+    const repository = createPrismaSharedResourceRepository(
+      rootClient as unknown as Parameters<typeof createPrismaSharedResourceRepository>[0]
+    );
+
+    await expect(repository.transaction(async () => "committed")).resolves.toBe("committed");
+    expect(rootClient.$transaction).toHaveBeenCalledTimes(2);
+    expect(rootClient.$transaction).toHaveBeenLastCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
+  });
+
   it("routes both create and update audience mutations through the audience transaction", async () => {
     const repository = new FakeResourceRepository();
     const service = resourceService(repository);

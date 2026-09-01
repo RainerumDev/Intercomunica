@@ -11,7 +11,7 @@ Sostituire l'attuale bacheca di Intercomunica con una pagina che riunisca le ris
 - Ogni risorsa contiene soltanto un link HTTP/HTTPS e metadati testuali; non è previsto alcun caricamento di file.
 - Una risorsa è visibile a tutti oppure a uno o più sottogruppi. Il filtro è applicato dal server.
 - Gli admin possono creare, modificare, eliminare e riordinare le risorse.
-- L'anteprima del link è opzionale. Quando è attiva, il server prova a recuperare titolo, immagine e nome del sito; l'admin può modificare titolo e descrizione.
+- L'anteprima del link è opzionale e soltanto testuale. Quando è attiva, il server prova a recuperare titolo, descrizione e nome del sito; l'admin può modificare titolo e descrizione.
 - Un errore nel recupero dell'anteprima non impedisce il salvataggio di una risorsa con titolo manuale.
 - Le Impostazioni di Intercomunica sono divise nelle tab `Calendario` e `Risorse condivise`.
 - I tre servizi usano il marchio Rainerum ricorrente, superfici chiare e il rosso istituzionale come unico accento di prodotto.
@@ -22,6 +22,7 @@ Sostituire l'attuale bacheca di Intercomunica con una pagina che riunisca le ris
 ## Non obiettivi
 
 - Allegati, upload, gestione documentale o archiviazione di immagini recuperate.
+- Immagini di anteprima esterne senza un proxy/cache server-side progettato e approvato separatamente.
 - Editor WYSIWYG, categorie delle risorse, analytics dei click o scadenze automatiche.
 - Un CMS esterno o un pacchetto UI condiviso fra i tre repository.
 - Aggiornamento di Intercomunica da React 18 a React 19.
@@ -40,7 +41,7 @@ Intercomunica aggiunge il modello Prisma `SharedResource` e la relazione molti-a
 - `title`: titolo obbligatorio mostrato nella card;
 - `description`: descrizione opzionale modificabile;
 - `previewEnabled`: abilita il recupero e la visualizzazione dell'anteprima;
-- `previewImageUrl`: URL opzionale dell'immagine Open Graph, non scaricata dall'app;
+- `previewImageUrl`: campo legacy mantenuto per compatibilità dello schema, sempre nullo nei nuovi salvataggi e mai richiesto dal browser;
 - `previewSiteName`: nome opzionale del sito sorgente;
 - `isGlobal`: visibilità per tutti;
 - `sortOrder`: intero usato per l'ordinamento stabile;
@@ -72,7 +73,7 @@ La visibilità delle risorse segue la regola degli eventi: `isGlobal = true`, op
 
 Il recupero accetta soltanto `http:` e `https:`. Prima di ogni richiesta e dopo ogni redirect il server risolve l'host e rifiuta loopback, link-local, multicast, indirizzi privati IPv4/IPv6 e nomi locali. Sono previsti timeout breve, numero massimo di redirect, limite alla dimensione della risposta e accettazione esclusiva di contenuti HTML.
 
-Il parser legge i metadati Open Graph e, come fallback, il titolo HTML. I valori vengono trattati come testo non fidato e mai renderizzati come HTML. L'immagine resta un URL remoto; Intercomunica non la scarica né la trasforma. Errori di rete, formati non supportati o metadati assenti producono una risposta gestibile dalla UI e non bloccano il salvataggio manuale.
+Il parser legge i metadati Open Graph testuali e, come fallback, il titolo HTML. I valori vengono trattati come testo non fidato e mai renderizzati come HTML. `og:image` viene ignorato: né il server né il browser recuperano immagini esterne. Le immagini di anteprima restano disabilitate finché un intervento separato non approva e realizza un proxy/cache server-side con limiti e controlli dedicati; questa specifica non autorizza fetch diretti dal browser. Errori di rete, formati non supportati o metadati assenti producono una risposta gestibile dalla UI e non bloccano il salvataggio manuale.
 
 ## Interfaccia Intercomunica
 
@@ -84,7 +85,7 @@ La pagina usa questa gerarchia:
 2. sezione `Risorse condivise` con card responsive;
 3. sezione `Prossimi eventi` con le categorie esistenti.
 
-Una card mostra l'immagine Open Graph quando l'anteprima è attiva e disponibile. In assenza di immagine usa una variante testuale con nome del sito o hostname. Titolo, descrizione e stato `Per tutti` rimangono leggibili in entrambi gli stati. I link si aprono in una nuova scheda con `rel="noopener noreferrer"`.
+Una card usa sempre la variante testuale con nome del sito o hostname. Titolo, descrizione e stato `Per tutti` rimangono leggibili; eventuali URL immagine legacy non vengono renderizzati né richiesti. I link si aprono in una nuova scheda con `rel="noopener noreferrer"`.
 
 Lo stato vuoto distingue l'assenza di risorse dall'assenza di eventi, così una raccolta vuota non nasconde l'altra.
 

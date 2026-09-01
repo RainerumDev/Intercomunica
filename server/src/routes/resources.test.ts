@@ -274,4 +274,21 @@ describe("admin resource routes", () => {
     expect(response.status).toBe(409);
     expect(response.body).toEqual({ error: "Ordine delle risorse non valido" });
   });
+
+  it("returns a typed collection conflict after bounded serializable retries are exhausted", async () => {
+    resourceOperations.reorderResources.mockRejectedValue(
+      Object.assign(new Error("write conflict"), { code: "P2034" })
+    );
+
+    const response = await request(createApp())
+      .put("/api/admin/resources/order")
+      .set("Cookie", adminCookie())
+      .send({ resourceIds: ["resource-2", "resource-1"] });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      error: "La raccolta delle risorse è cambiata durante l’operazione",
+      code: "RESOURCE_COLLECTION_CONFLICT",
+    });
+  });
 });

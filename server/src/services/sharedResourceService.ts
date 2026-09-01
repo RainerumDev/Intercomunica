@@ -320,7 +320,8 @@ export function createPrismaSharedResourceRepository(
 ): SharedResourceRepository {
   return {
     ...resourceRepositoryOperations(client),
-    transaction: (work) => client.$transaction(
+    transaction: (work) => serializableTransaction(
+      client,
       (transaction) => work(transactionRepository(transaction))
     ),
     audienceTransaction: (work) => serializableTransaction(

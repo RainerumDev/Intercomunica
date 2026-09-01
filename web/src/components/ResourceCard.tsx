@@ -9,20 +9,10 @@ interface Props {
 }
 
 export default function ResourceCard({ resource, children, linked = true }: Props) {
-  const showImage = resource.previewEnabled && Boolean(resource.previewImageUrl);
   const content = (
     <>
       <div className="resource-card__preview">
         <span>{resourceCardFallback(resource)}</span>
-        {showImage && (
-          <img
-            key={resource.previewImageUrl}
-            src={resource.previewImageUrl ?? undefined}
-            alt=""
-            className="resource-card__image"
-            onError={(event) => event.currentTarget.classList.add("hidden")}
-          />
-        )}
       </div>
       <div className="resource-card__body">
         <div className="flex items-start justify-between gap-3">

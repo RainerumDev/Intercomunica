@@ -78,7 +78,28 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
     previewGeneration.current += 1;
     setPreviewBusy(false);
     setPreviewError(null);
-    set("url", url);
+    setSaveError(null);
+    setDraft((current) => ({
+      ...current,
+      url,
+      previewImageUrl: null,
+      previewSiteName: null,
+    }));
+  };
+
+  const setPreviewEnabled = (previewEnabled: boolean) => {
+    previewFieldRevisions.current.previewEnabled += 1;
+    setSaveError(null);
+    if (!previewEnabled) {
+      previewGeneration.current += 1;
+      setPreviewBusy(false);
+      setPreviewError(null);
+    }
+    setDraft((current) => ({
+      ...current,
+      previewEnabled,
+      ...(previewEnabled ? {} : { previewImageUrl: null, previewSiteName: null }),
+    }));
   };
 
   const toggleSubgroup = (id: string) =>
@@ -112,7 +133,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
             previewEnabled: fieldRevisions.previewEnabled === previewFieldRevisions.current.previewEnabled
               ? true
               : current.previewEnabled,
-            previewImageUrl: preview.imageUrl,
+            previewImageUrl: null,
             previewSiteName: preview.siteName,
           }
         : current
@@ -196,7 +217,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
             type="checkbox"
             disabled={disabled || saving}
             checked={draft.previewEnabled}
-            onChange={(event) => set("previewEnabled", event.target.checked)}
+            onChange={(event) => setPreviewEnabled(event.target.checked)}
           />
           Mostra anteprima
         </label>

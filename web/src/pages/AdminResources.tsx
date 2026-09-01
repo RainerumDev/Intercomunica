@@ -7,6 +7,13 @@ import type { SharedResource, SharedResourceDraft, Subgroup } from "../types";
 
 type EditorState = { resourceId: string | null; draft: SharedResourceDraft } | null;
 
+const missingResourceMessage = "La risorsa non esiste più. La raccolta è stata aggiornata.";
+const staleCollectionMessage = "La raccolta è cambiata. È stato caricato l’elenco aggiornato.";
+
+function isNotFound(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 404;
+}
+
 export default function AdminResources() {
   const [resources, setResources] = useState<SharedResource[] | null>(null);
   const [subgroups, setSubgroups] = useState<Subgroup[] | null>(null);
@@ -45,7 +52,13 @@ export default function AdminResources() {
     setRefreshing(true);
     setRefreshError(null);
     try {
-      setResources(await adminResourcesApi.list());
+      const loadedResources = await adminResourcesApi.list();
+      setResources(loadedResources);
+      setEditor((current) =>
+        current?.resourceId && !loadedResources.some((resource) => resource.id === current.resourceId)
+          ? null
+          : current
+      );
     } catch (error) {
       setRefreshError((error as Error).message);
     } finally {
@@ -112,6 +125,14 @@ export default function AdminResources() {
       });
       setEditor(null);
     } catch (error) {
+      if (editor.resourceId && isNotFound(error)) {
+        const missingId = editor.resourceId;
+        setResources((current) => current?.filter((resource) => resource.id !== missingId) ?? []);
+        setEditor(null);
+        setMutationError(missingResourceMessage);
+        await refreshResources();
+        return;
+      }
       if (error instanceof ApiError && error.status === 409) {
         if (error.code === "RESOURCE_AUDIENCE_CONFLICT") {
           await refreshResourceAudiences();
@@ -136,7 +157,14 @@ export default function AdminResources() {
       setEditor((current) => current?.resourceId === resource.id ? null : current);
       await refreshResources();
     } catch (removeError) {
-      setMutationError((removeError as Error).message);
+      if (isNotFound(removeError)) {
+        setResources((current) => current?.filter((item) => item.id !== resource.id) ?? []);
+        setEditor((current) => current?.resourceId === resource.id ? null : current);
+        setMutationError(missingResourceMessage);
+        await refreshResources();
+      } else {
+        setMutationError((removeError as Error).message);
+      }
     } finally {
       setBusyId(null);
     }
@@ -158,8 +186,8 @@ export default function AdminResources() {
       setResources(await adminResourcesApi.reorder(nextIds));
     } catch (moveError) {
       setResources(previous);
-      setMutationError((moveError as Error).message);
-      if (moveError instanceof ApiError && moveError.status === 409) {
+      setMutationError(isNotFound(moveError) ? staleCollectionMessage : (moveError as Error).message);
+      if (moveError instanceof ApiError && (moveError.status === 404 || moveError.status === 409)) {
         await refreshResources();
       }
     } finally {
