@@ -17,6 +17,7 @@ export default function AdminResources() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const mutationsDisabled = busyId !== null || refreshing;
 
   const subgroupNames = useMemo(
     () => new Map((subgroups ?? []).map((subgroup) => [subgroup.id, subgroup.name])),
@@ -57,11 +58,13 @@ export default function AdminResources() {
   }, [loadCollection]);
 
   const openNew = () => {
+    if (mutationsDisabled) return;
     setMutationError(null);
     setEditor({ resourceId: null, draft: { ...emptyResourceDraft, subgroupIds: [] } });
   };
 
   const openEdit = (resource: SharedResource) => {
+    if (mutationsDisabled) return;
     const draft: SharedResourceDraft = {
       url: resource.url,
       title: resource.title,
@@ -77,7 +80,7 @@ export default function AdminResources() {
   };
 
   const save = async (draft: SharedResourceDraft) => {
-    if (!editor) return;
+    if (!editor || mutationsDisabled) return;
     const saved = editor.resourceId
       ? await adminResourcesApi.update(editor.resourceId, draft)
       : await adminResourcesApi.create(draft);
@@ -91,6 +94,7 @@ export default function AdminResources() {
   };
 
   const remove = async (resource: SharedResource) => {
+    if (mutationsDisabled) return;
     if (!window.confirm(`Eliminare la risorsa «${resource.title}»?`)) return;
     setBusyId(resource.id);
     setMutationError(null);
@@ -107,7 +111,7 @@ export default function AdminResources() {
   };
 
   const move = async (resourceId: string, direction: "up" | "down") => {
-    if (!resources) return;
+    if (!resources || mutationsDisabled) return;
     const previous = resources;
     const currentIds = previous.map((resource) => resource.id);
     const nextIds = moveResourceId(currentIds, resourceId, direction);
@@ -148,7 +152,7 @@ export default function AdminResources() {
   if (!resources || !subgroups) return null;
 
   return (
-    <div className="max-w-4xl space-y-6" aria-busy={busyId !== null || refreshing}>
+    <div className="max-w-4xl space-y-6" aria-busy={mutationsDisabled}>
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Risorse condivise</h1>
@@ -160,7 +164,8 @@ export default function AdminResources() {
           <button
             type="button"
             onClick={openNew}
-            className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800"
+            disabled={mutationsDisabled}
+            className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50"
           >
             Nuova risorsa
           </button>
@@ -184,7 +189,7 @@ export default function AdminResources() {
           </button>
         </div>
       )}
-      {(busyId !== null || refreshing) && (
+      {mutationsDisabled && (
         <p role="status" aria-live="polite" className="sr-only">
           {refreshing ? "Aggiornamento elenco…" : "Operazione in corso…"}
         </p>
@@ -196,7 +201,10 @@ export default function AdminResources() {
           initialDraft={editor.draft}
           subgroups={subgroups}
           onSave={save}
-          onCancel={() => setEditor(null)}
+          onCancel={() => {
+            if (!mutationsDisabled) setEditor(null);
+          }}
+          disabled={mutationsDisabled}
         />
       )}
 
@@ -219,7 +227,7 @@ export default function AdminResources() {
                   <button
                     type="button"
                     onClick={() => move(resource.id, "up")}
-                    disabled={index === 0 || busyId !== null}
+                    disabled={index === 0 || mutationsDisabled}
                     className="rounded border border-gray-300 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
                     Sposta su
@@ -227,7 +235,7 @@ export default function AdminResources() {
                   <button
                     type="button"
                     onClick={() => move(resource.id, "down")}
-                    disabled={index === resources.length - 1 || busyId !== null}
+                    disabled={index === resources.length - 1 || mutationsDisabled}
                     className="rounded border border-gray-300 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
                     Sposta giù
@@ -235,7 +243,7 @@ export default function AdminResources() {
                   <button
                     type="button"
                     onClick={() => openEdit(resource)}
-                    disabled={busyId !== null}
+                    disabled={mutationsDisabled}
                     className="rounded border border-blue-700 px-2.5 py-1.5 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50"
                   >
                     Modifica
@@ -243,7 +251,7 @@ export default function AdminResources() {
                   <button
                     type="button"
                     onClick={() => remove(resource)}
-                    disabled={busyId !== null}
+                    disabled={mutationsDisabled}
                     className="rounded border border-red-600 px-2.5 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
                   >
                     Elimina

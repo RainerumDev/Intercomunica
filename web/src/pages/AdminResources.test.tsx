@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { adminResourcesApi, api } from "../api";
@@ -165,9 +165,54 @@ describe("AdminResources", () => {
     await user.click(within(cards[0]).getByRole("button", { name: "Elimina" }));
     await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(1));
     const remainingEdit = within(screen.getByRole("article")).getByRole("button", { name: "Modifica" }) as HTMLButtonElement;
+    const newResource = screen.getByRole("button", { name: "Nuova risorsa" }) as HTMLButtonElement;
     expect(remainingEdit.disabled).toBe(true);
+    expect(newResource.disabled).toBe(true);
 
     await act(async () => refresh.resolve([second]));
-    await waitFor(() => expect(remainingEdit.disabled).toBe(false));
+    await waitFor(() => {
+      expect(remainingEdit.disabled).toBe(false);
+      expect(newResource.disabled).toBe(false);
+    });
+  });
+
+  it("locks an open editor and its submit handler during a manual refresh retry", async () => {
+    const user = userEvent.setup();
+    const retryRefresh = deferred<SharedResource[]>();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(adminResourcesApi, "list")
+      .mockResolvedValueOnce([first, second])
+      .mockRejectedValueOnce(new Error("Aggiornamento fallito"))
+      .mockReturnValueOnce(retryRefresh.promise);
+    vi.spyOn(adminResourcesApi, "remove").mockResolvedValue({ ok: true });
+    const update = vi.spyOn(adminResourcesApi, "update").mockResolvedValue(first);
+    render(<AdminResources />);
+
+    const cards = await screen.findAllByRole("article");
+    await user.click(within(cards[0]).getByRole("button", { name: "Modifica" }));
+    await user.click(within(cards[1]).getByRole("button", { name: "Elimina" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Aggiornamento fallito");
+
+    await user.click(screen.getByRole("button", { name: "Riprova aggiornamento" }));
+    const save = screen.getByRole("button", { name: "Salva" }) as HTMLButtonElement;
+    const cancel = screen.getByRole("button", { name: "Annulla" }) as HTMLButtonElement;
+    const previewButton = screen.getByRole("button", { name: "Genera anteprima" }) as HTMLButtonElement;
+    await waitFor(() => {
+      expect(save.disabled).toBe(true);
+      expect(cancel.disabled).toBe(true);
+      expect(previewButton.disabled).toBe(true);
+    });
+
+    const form = screen.getByRole("heading", { name: "Modifica risorsa" }).closest("section")?.querySelector("form");
+    if (!form) throw new Error("Editor form not found");
+    fireEvent.submit(form);
+    expect(update).not.toHaveBeenCalled();
+
+    await act(async () => retryRefresh.resolve([first]));
+    await waitFor(() => {
+      expect(save.disabled).toBe(false);
+      expect(cancel.disabled).toBe(false);
+      expect(previewButton.disabled).toBe(false);
+    });
   });
 });
