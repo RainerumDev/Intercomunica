@@ -2,6 +2,38 @@
 
 **Status:** complete for the approved Orario UI scope.
 
+## Review fix round 1 — visual snapshot integrity
+
+- Review commit: `afeefc9bea171bf8797846b4d9ceea8939d0ab12` (`test(ui): refresh Rainerum visual baselines`).
+- Review baseline: `b2290044d6f6e541b9f75b16c06bc35fbeeb1115`.
+- Exact review artifact: `.superpowers/sdd/2026-09-01-rainerum-ui-alignment/review-b229004..afeefc9.diff` (42,008 lines, 2,810,459 bytes; SHA-256 `cdb6716d92b626ca51ec7ec309ca97d8996983e09afaa645c0b376015155b14a`). `git apply --check --reverse` passed against the review commit.
+
+All 21 tracked Playwright baselines affected by the intentional Task 5 identity and token changes were regenerated against a repository-migrated disposable PostgreSQL 17 database, then individually inspected. The captures show the approved official full desktop logo or compact mobile mark, institutional red navigation and actions, warm page/surface/line tokens, and unchanged semantic timetable/variation/state colors. No unrelated visual baseline and no production file changed in this review.
+
+Affected baselines:
+
+- Public timetable, nine full-page screenshots: `mobile-{class,teacher,school}-darwin.png` at a 390×844 viewport produce 390×912 PNGs; `tablet-{class,teacher,school}-darwin.png` at a 768×1024 viewport produce 768×1092 PNGs; `desktop-{class,teacher}-darwin.png` at a 1280×1024 viewport produce 1280×1078 PNGs; `desktop-school-darwin.png` produces 1280×1616. The filename describes the configured viewport category, while the dimensions are larger where `fullPage: true` captures document height.
+- Admin timetable, ten viewport screenshots (`fullPage: false`): `scuola`, `classe`, and `docente` at mobile 390×844, tablet 768×1024, and desktop 1280×1024, plus `scuola-sta-itt-desktop-darwin.png` at 1280×1024.
+- Admin variations, two dialog-element screenshots: `variation-editor-mobile-darwin.png` is 390×743 and `variation-editor-desktop-darwin.png` is 496×1024. These dimensions are the captured dialog bounds, not page viewport labels.
+
+Twenty captures retain their prior pixel dimensions. The public desktop school full-page capture changed from 1280×1627 to 1280×1616 because of the intentional Task 5 layout geometry. During normal comparison, the first generated `classe-desktop` baseline proved to contain a one-pixel-narrow antialias sample at the official logo edge; two normal runs produced the same stable 109×25 logo raster used by the other desktop admin captures. Only that baseline was recaptured and re-inspected before the final comparison.
+
+The visual-spec fixtures were brought up to the already-migrated application contract without modifying production behavior: the admin variations fixture now uses `substitution_replaced_teachers`, starts its unrelated historical group cancelled, waits for the committed revision before asserting the newly added atomic cards, and selects the outgoing teacher explicitly in the dedicated substitution flow. The public foreground assertions now expect the approved Task 5 ink/red values. A red full-suite run also reproduced the existing asynchronous mobile-grid measurement race (the `fit` mode was visible before body geometry settled); the test now polls the geometry contract itself. The focused check then passed 3/3 repeated runs.
+
+Review verification:
+
+| Command / check | Result |
+| --- | --- |
+| Affected specs, normal comparison mode (no snapshot update) | 37/37 passed across `public-timetable`, `admin-timetable`, and `admin-variations`; all 21 baselines matched. |
+| Full Playwright suite, normal comparison mode | 53/53 passed. |
+| Focused mobile-grid readiness regression | 3/3 repeated runs passed after the red full-suite reproduction. |
+| Full serial Vitest suite against disposable PostgreSQL 17 | 73 files passed, 1 guarded real-template file skipped; 485 tests passed, 1 skipped. |
+| Focused timetable/auth/public UI run | 5 files, 58 tests passed. |
+| `npm run typecheck` / `npm run lint` / `npm run build` | Passed. |
+| `git diff --check`, cached diff check, exact review diff reverse-apply | Passed. |
+
+The first full Vitest invocation was sandboxed from localhost and failed only with `connect EPERM 127.0.0.1:55439`; the identical serial command was rerun with permitted access to the disposable database and passed 485/485 runnable tests. The optional Base64URL fixture was not changed because no failure occurred in this review run and there was no new isolated evidence requiring it. Playwright still emits known non-failing development-server warnings for a deliberately stale publication conflict, missing fake Google configuration, an early-closed response stream, and occasional hydration/LCP diagnostics; normal comparison and the complete suite both exited successfully.
+
 ## Deliverables
 
 - Implementation commit: `b229004` (`style(ui): align Orario with Rainerum portal`).
