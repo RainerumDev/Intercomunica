@@ -2,6 +2,40 @@
 
 **Status:** complete for the approved Prenotazioni UI scope.
 
+## Review fix round 1
+
+- Review-fix commit: `5bbb3dfd85c441381abbbfeedbecba82b54aff57` (`fix(ui): harden protected shell and booking dialog`).
+- Review baseline: `625205fbdcd836181b7b20154b39b3c22546c7b0`.
+- Exact-base review artifact: `.superpowers/sdd/2026-09-01-rainerum-ui-alignment/review-625205f..5bbb3df.diff` (439 lines, 38,534 bytes). `git apply --check --reverse` passed against the final Prenotazioni tree.
+
+The protected `/admin`, `/admin/utenti`, `/admin/classi`, `/admin/inventory`, `/admin/riconciliazione`, `/tecnico`, `/tecnico/guasti`, and `/tecnico/richieste` routes now reuse the existing `AppShell` through the smallest route layouts. Their former page-root `main` elements were changed to neutral containers, leaving exactly one main landmark while supplying the Rainerum brand, skip link, responsive primary navigation, role-derived destinations, current-user context, and existing logout action. Page-level permission checks, server actions, routes, and role behavior remain unchanged.
+
+Form boundaries now use the approved darker `#8f706c` strong line token; the computed admin select boundary measures at least 3:1 against its white card surface while semantic status colors remain untouched. A rendered browser contract checks the actual computed colors.
+
+The cancellation dialog now moves focus to the enabled `Torna indietro` control before the confirmation action becomes disabled, marks every branch outside the live modal inert while it is open, handles Tab from any stale/outside active element, and restores each previous inert state on close. The existing trigger-restoration effect remains in place. A delayed-request browser test proves that repeated Tab cannot reach the header or mobile navigation during the pending request and that focus returns to the trigger after close. Recurring-scope radios now share `name="scope"`, expose explicit `OCCURRENCE` and `THIS_AND_FUTURE` values, and retain native arrow-key selection.
+
+Review verification:
+
+| Command / check | Result |
+| --- | --- |
+| Red/green delayed cancellation browser contract | Failed first on pending focus, then passed after the dialog fix. |
+| `pnpm test:e2e` on a fresh migrated/seeded PostgreSQL 17 database | 6 tests passed: teacher booking/cancellation, recurring radio keyboard semantics, delayed focus/inert containment, all admin routes at 767 px, all technician routes at 768 px, and computed 3:1 control-boundary contrast. |
+| `pnpm test` with the disposable database | 32 files, 148 tests passed. |
+| `pnpm typecheck` | Passed after correcting the DOM-parent type annotation discovered by the first run. |
+| `pnpm lint` | Passed. |
+| `pnpm build` | Passed; all application and API routes built successfully. |
+| `git diff --check 625205f..5bbb3df` | Passed. |
+| Exact review diff reverse-apply check | Passed. |
+| Preservation check | Prenotazioni staging/tracked tree is clean after commit; only the pre-existing `.DS_Store` and `mockups/` remain untracked. |
+
+Review screenshots:
+
+- `/private/tmp/prenotazioni-task4-review/admin-shell-767.png` — 767×844 admin dashboard with compact mark, skip-link shell, logout, six-column role-aware bottom navigation, and single main landmark.
+- `/private/tmp/prenotazioni-task4-review/technician-shell-768.png` — 768×844 technician conflict route with full official logo, logout, five-column role-aware bottom navigation, and single main landmark.
+- `/private/tmp/prenotazioni-task4-review/calendar-desktop-1440.png` — 1440×900 desktop calendar recaptured only after the cross-origin iframe body was visible and non-empty (1,816 rendered characters), showing the loaded month grid and full desktop shell.
+
+The browser captures and all behavior tests used development-safe local authentication, fake integrations, and an isolated disposable database, which was removed after verification. Chrome's local extension added its own body attribute and caused a development-only hydration warning in the server console; it did not alter repository code, test outcomes, or the captured product layout. No deployment, dependency change, shared database, or production account was used.
+
 ## Deliverables
 
 - Implementation commit: `625205fbdcd836181b7b20154b39b3c22546c7b0` (`style(ui): align Prenotazioni with Rainerum portal`).
