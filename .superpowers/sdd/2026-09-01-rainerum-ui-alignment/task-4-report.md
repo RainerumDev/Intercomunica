@@ -2,6 +2,36 @@
 
 **Status:** complete for the approved Prenotazioni UI scope.
 
+## Review fix round 2
+
+- Review-fix commit: `b58f7ffce8d5fe16937ad7467babc30405c8cba1` (`fix(ui): focus refreshed booking summary`).
+- Review baseline: `5bbb3dfd85c441381abbbfeedbecba82b54aff57`.
+- Exact-base review artifact: `.superpowers/sdd/2026-09-01-rainerum-ui-alignment/review-5bbb3df..b58f7ff.diff` (151 lines, 8,689 bytes). `git apply --check --reverse` passed against the final Prenotazioni tree.
+
+The successful-cancellation focus path now survives the server refresh that removes the booking card and its trigger. A narrow client focus region owns the stable `Elenco prenotazioni` heading with `tabindex="-1"`, remembers that a successful cancellation requested post-refresh focus, and moves focus only after the rendered next-occurrence key changes. Back and Escape continue to close the dialog and restore the still-present trigger through the existing effect; failed cancellation requests do not request refreshed-page focus. No authentication, permission, route, request payload, API handler, database service, availability, conflict, or cancellation decision logic changed.
+
+The delayed Playwright cancellation test now forwards the request with `route.fetch()`, holds only the real route response, and fulfills with that real response. It proves pending focus/inert containment, the actual database-backed removal of the recurring booking, and final focus on the refreshed list heading. A separate browser test proves trigger restoration through both `Torna indietro` and Escape.
+
+Round-two verification:
+
+| Command / check | Result |
+| --- | --- |
+| Red/green real-route focus contract | Back/Escape passed; successful cancellation failed first because the unchanged heading lacked `tabindex` and focus, then passed after the refresh-stable focus region was added. |
+| `pnpm test:e2e` on a fresh migrated/seeded PostgreSQL 17 database | 7 tests passed, including the real mutation/refresh focus contract and separate Back/Escape restoration test. |
+| `pnpm test` with the disposable database | 32 files, 148 tests passed. |
+| `pnpm typecheck` | Passed. |
+| `pnpm lint` | Passed. |
+| `pnpm build` | Passed; all application and API routes built successfully. |
+| `git diff --check 5bbb3df..b58f7ff` | Passed. |
+| Exact review diff reverse-apply check | Passed. |
+| Preservation check | Prenotazioni tracked tree and staging are clean after commit; only the pre-existing `.DS_Store` and `mockups/` remain untracked. |
+
+Round-two screenshot:
+
+- `/private/tmp/prenotazioni-task4-review2/calendar-desktop-1440x900.png` — calendar captured at an exact 1440×900 viewport only after the cross-origin iframe body was visible and non-empty (1,816 rendered characters). Independent inspection reports MIME `image/png`, format `png`, width 1440, height 900, and SHA-1 `0a684e51a41af8a39b2656e3f2b5d3940c8cd53f`. The browser screenshot stream identified as JPEG despite its requested extension, so the captured pixels were converted and re-verified as a genuine PNG before acceptance.
+
+The local development server and isolated database were stopped and the disposable database removed after verification. No deployment, dependency update, shared data, or production account was used.
+
 ## Review fix round 1
 
 - Review-fix commit: `5bbb3dfd85c441381abbbfeedbecba82b54aff57` (`fix(ui): harden protected shell and booking dialog`).
@@ -30,8 +60,8 @@ Review verification:
 
 Review screenshots:
 
-- `/private/tmp/prenotazioni-task4-review/admin-shell-767.png` — 767×844 admin dashboard with compact mark, skip-link shell, logout, six-column role-aware bottom navigation, and single main landmark.
-- `/private/tmp/prenotazioni-task4-review/technician-shell-768.png` — 768×844 technician conflict route with full official logo, logout, five-column role-aware bottom navigation, and single main landmark.
+- `/private/tmp/prenotazioni-task4-review/admin-shell-767.png` — 767×844 admin dashboard with compact mark, skip-link shell, logout, six role-aware destinations in a 3-column/2-row bottom-navigation grid, and single main landmark.
+- `/private/tmp/prenotazioni-task4-review/technician-shell-768.png` — 768×844 technician conflict route with full official logo, logout, five role-aware destinations in a 3-column/2-row bottom-navigation grid, and single main landmark.
 - `/private/tmp/prenotazioni-task4-review/calendar-desktop-1440.png` — 1440×900 desktop calendar recaptured only after the cross-origin iframe body was visible and non-empty (1,816 rendered characters), showing the loaded month grid and full desktop shell.
 
 The browser captures and all behavior tests used development-safe local authentication, fake integrations, and an isolated disposable database, which was removed after verification. Chrome's local extension added its own body attribute and caused a development-only hydration warning in the server console; it did not alter repository code, test outcomes, or the captured product layout. No deployment, dependency change, shared database, or production account was used.
