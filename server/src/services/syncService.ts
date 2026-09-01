@@ -10,6 +10,7 @@ import {
 import { eventToCalendarPayload } from "./eventService.js";
 import { renderCalendarName } from "./calendarName.js";
 import { isCalendarUsageLimitError } from "../google/retry.js";
+import { usesPersonalCalendar } from "../config.js";
 
 const CALENDAR_MUTATION_DELAY_MS = 750;
 
@@ -79,9 +80,10 @@ export async function runFullSync(): Promise<SyncResult> {
       }
     }
 
-    // --- 2. calendars for every active member (create missing, rename on template change)
+    // --- 2. calendars for eligible active members (create missing, rename on template change)
     const active = await prisma.user.findMany({ where: { isActive: true } });
     for (const u of active) {
+      if (!usesPersonalCalendar(u.email)) continue;
       const desiredName = renderCalendarName(cfg.calendarNameTemplate, u);
       let calendarMutated = false;
       try {
@@ -147,14 +149,14 @@ export async function reconcileEvents(): Promise<{ reinjected: number; orphansRe
   let orphansRemoved = 0;
   const errors: string[] = [];
 
-  const users = await prisma.user.findMany({
+  const users = (await prisma.user.findMany({
     where: { isActive: true, calendarId: { not: null } },
     include: {
       eventInstances: {
         include: { event: { include: { tags: { include: { tag: true } }, subgroups: true } } },
       },
     },
-  });
+  })).filter((user) => usesPersonalCalendar(user.email));
 
   for (const u of users) {
     const calendarId = u.calendarId as string;

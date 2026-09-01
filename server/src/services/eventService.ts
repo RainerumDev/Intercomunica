@@ -1,4 +1,5 @@
 import type { Event, EventTag, EventSubgroup, Tag } from "@prisma/client";
+import { usesPersonalCalendar } from "../config.js";
 import { prisma } from "../db.js";
 import {
   insertEvent,
@@ -47,13 +48,21 @@ export function eventToCalendarPayload(event: EventWithRelations): CalendarEvent
 /** Distinct active teachers (with a calendar) belonging to any of the subgroups. */
 export async function targetUsers(subgroupIds: string[]) {
   if (subgroupIds.length === 0) return [];
-  return prisma.user.findMany({
+  const users = await prisma.user.findMany({
     where: {
       isActive: true,
       calendarId: { not: null },
       subgroups: { some: { subgroupId: { in: subgroupIds } } },
     },
   });
+  return users.filter((user) => usesPersonalCalendar(user.email));
+}
+
+async function allPersonalCalendarUsers() {
+  const users = await prisma.user.findMany({
+    where: { isActive: true, calendarId: { not: null } },
+  });
+  return users.filter((user) => usesPersonalCalendar(user.email));
 }
 
 /** Upsert tags by name, return Tag ids. */
@@ -115,7 +124,7 @@ export async function injectForTargets(eventId: string): Promise<void> {
   const event = await loadEvent(eventId);
   const payload = eventToCalendarPayload(event);
   const targets = event.isGlobal
-    ? await prisma.user.findMany({ where: { isActive: true, calendarId: { not: null } } })
+    ? await allPersonalCalendarUsers()
     : await targetUsers(event.subgroups.map((s) => s.subgroupId));
   const existing = await prisma.eventInstance.findMany({ where: { eventId } });
   const existingUserIds = new Set(existing.map((i) => i.userId));
@@ -171,7 +180,7 @@ export async function updateEvent(
   }
 
   const targets = input.isGlobal
-    ? await prisma.user.findMany({ where: { isActive: true, calendarId: { not: null } } })
+    ? await allPersonalCalendarUsers()
     : await targetUsers(input.subgroupIds);
   const targetIds = new Set(targets.map((u) => u.id));
 

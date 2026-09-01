@@ -17,6 +17,8 @@ const envSchema = z.object({
   ENCRYPTION_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, "must be 64 hex chars (32 bytes)"),
   /// Comma-separated list of emails granted ADMIN role at login
   ADMIN_EMAILS: z.string().default(""),
+  /// Comma-separated addresses that must not receive a personal calendar
+  CALENDAR_EXCLUDED_EMAILS: z.string().default(""),
   /// If set (e.g. "rainerum.it"), only accounts of this domain can log in
   ALLOWED_EMAIL_DOMAIN: z.string().optional(),
 });
@@ -46,4 +48,17 @@ export function adminEmails(): Set<string> {
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean)
   );
+}
+
+export function calendarExcludedEmails(): Set<string> {
+  return new Set(
+    config()
+      .CALENDAR_EXCLUDED_EMAILS.split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+export function usesPersonalCalendar(email: string): boolean {
+  return !calendarExcludedEmails().has(email.trim().toLowerCase());
 }

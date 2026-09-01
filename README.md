@@ -41,6 +41,7 @@ cp server/.env.example server/.env
 # compila GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, JWT_SECRET
 # ENCRYPTION_KEY: openssl rand -hex 32
 # ADMIN_EMAILS: email di presidenza/direzione separate da virgola
+# CALENDAR_EXCLUDED_EMAILS: account nascosti dall'elenco docenti e senza calendario personale
 # ALLOWED_EMAIL_DOMAIN: limita il login al dominio della scuola (consigliato)
 ```
 
