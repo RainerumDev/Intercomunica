@@ -1,11 +1,19 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { adminResourcesApi, api } from "../api";
 import type { SharedResource, Subgroup } from "../types";
 import AdminResources from "./AdminResources";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
 
 function resource(id: string, title: string, sortOrder: number): SharedResource {
   return {
@@ -106,5 +114,60 @@ describe("AdminResources", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Creazione fallita");
     expect((screen.getByRole("textbox", { name: "Titolo" }) as HTMLInputElement).value).toBe("Bozza non persa");
     expect(screen.getByText("Nessuna risorsa condivisa. Aggiungi il primo link per iniziare.")).toBeTruthy();
+  });
+
+  it("inserts the resource returned by a successful create", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminResourcesApi, "list").mockResolvedValue([]);
+    vi.spyOn(adminResourcesApi, "create").mockResolvedValue(resource("created", "Titolo normalizzato", 0));
+    render(<AdminResources />);
+
+    await user.click(await screen.findByRole("button", { name: "Nuova risorsa" }));
+    await user.type(screen.getByRole("textbox", { name: "URL" }), "https://created.example.org");
+    await user.type(screen.getByRole("textbox", { name: "Titolo" }), "Titolo inviato");
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+
+    expect(await screen.findByRole("heading", { name: "Titolo normalizzato" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Nuova risorsa" })).toBeNull();
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+  });
+
+  it("replaces the edited resource with the successful update response", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminResourcesApi, "list").mockResolvedValue([first]);
+    vi.spyOn(adminResourcesApi, "update").mockResolvedValue({ ...first, title: "Prima aggiornata dal server" });
+    render(<AdminResources />);
+
+    const card = await screen.findByRole("article");
+    await user.click(within(card).getByRole("button", { name: "Modifica" }));
+    const title = screen.getByRole("textbox", { name: "Titolo" });
+    await user.clear(title);
+    await user.type(title, "Prima inviata");
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+
+    expect(await screen.findByRole("heading", { name: "Prima aggiornata dal server" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Prima" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Modifica risorsa" })).toBeNull();
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+  });
+
+  it("keeps remaining resource controls disabled until the post-delete refresh settles", async () => {
+    const user = userEvent.setup();
+    const refresh = deferred<SharedResource[]>();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(adminResourcesApi, "list")
+      .mockResolvedValueOnce([first, second])
+      .mockReturnValueOnce(refresh.promise);
+    vi.spyOn(adminResourcesApi, "remove").mockResolvedValue({ ok: true });
+    render(<AdminResources />);
+
+    const cards = await screen.findAllByRole("article");
+    await user.click(within(cards[0]).getByRole("button", { name: "Elimina" }));
+    await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(1));
+    const remainingEdit = within(screen.getByRole("article")).getByRole("button", { name: "Modifica" }) as HTMLButtonElement;
+    expect(remainingEdit.disabled).toBe(true);
+
+    await act(async () => refresh.resolve([second]));
+    await waitFor(() => expect(remainingEdit.disabled).toBe(false));
   });
 });

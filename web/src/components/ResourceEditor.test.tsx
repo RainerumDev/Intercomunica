@@ -91,6 +91,64 @@ describe("ResourceEditor", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("does not re-enable preview after the admin disables it while the request is pending", async () => {
+    const user = userEvent.setup();
+    const pending = deferred<ResourcePreview>();
+    vi.spyOn(adminResourcesApi, "preview").mockReturnValue(pending.promise);
+
+    render(
+      <ResourceEditor
+        initialDraft={{
+          ...emptyResourceDraft,
+          url: "https://resource.example.org",
+          title: "Titolo iniziale",
+          previewEnabled: true,
+        }}
+        subgroups={[]}
+        onSave={async () => {}}
+        onCancel={() => {}}
+      />
+    );
+
+    const previewToggle = screen.getByRole("checkbox", { name: "Mostra anteprima" }) as HTMLInputElement;
+    await user.click(screen.getByRole("button", { name: "Genera anteprima" }));
+    await user.click(previewToggle);
+    await act(async () => pending.resolve(preview("Retrieved", "https://resource.example.org/final")));
+
+    expect(previewToggle.checked).toBe(false);
+  });
+
+  it("preserves title clearing and description edits made while preview is pending", async () => {
+    const user = userEvent.setup();
+    const pending = deferred<ResourcePreview>();
+    vi.spyOn(adminResourcesApi, "preview").mockReturnValue(pending.promise);
+
+    render(
+      <ResourceEditor
+        initialDraft={{
+          ...emptyResourceDraft,
+          url: "https://resource.example.org",
+          title: "Titolo da cancellare",
+          description: "Descrizione iniziale",
+        }}
+        subgroups={[]}
+        onSave={async () => {}}
+        onCancel={() => {}}
+      />
+    );
+
+    const title = screen.getByRole("textbox", { name: "Titolo" }) as HTMLInputElement;
+    const description = screen.getByRole("textbox", { name: "Descrizione" }) as HTMLTextAreaElement;
+    await user.click(screen.getByRole("button", { name: "Genera anteprima" }));
+    await user.clear(title);
+    await user.clear(description);
+    await user.type(description, "Descrizione scelta dall'admin");
+    await act(async () => pending.resolve(preview("Retrieved", "https://resource.example.org/final")));
+
+    expect(title.value).toBe("");
+    expect(description.value).toBe("Descrizione scelta dall'admin");
+  });
+
   it("reports invalid URL, missing title, and missing subgroup accessibly on submit", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn(async () => {});

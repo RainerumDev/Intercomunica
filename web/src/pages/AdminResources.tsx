@@ -98,7 +98,6 @@ export default function AdminResources() {
       await adminResourcesApi.remove(resource.id);
       setResources((current) => current?.filter((item) => item.id !== resource.id) ?? []);
       setEditor((current) => current?.resourceId === resource.id ? null : current);
-      setBusyId(null);
       await refreshResources();
     } catch (removeError) {
       setMutationError((removeError as Error).message);

@@ -31,6 +31,11 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
   const [saveError, setSaveError] = useState<string | null>(null);
   const [validationAttempted, setValidationAttempted] = useState(false);
   const previewGeneration = useRef(0);
+  const previewFieldRevisions = useRef({
+    title: 0,
+    description: 0,
+    previewEnabled: 0,
+  });
 
   useEffect(() => () => {
     previewGeneration.current += 1;
@@ -51,6 +56,9 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
   }, [subgroups]);
 
   const set = <K extends keyof SharedResourceDraft>(key: K, value: SharedResourceDraft[K]) => {
+    if (key === "title") previewFieldRevisions.current.title += 1;
+    if (key === "description") previewFieldRevisions.current.description += 1;
+    if (key === "previewEnabled") previewFieldRevisions.current.previewEnabled += 1;
     setSaveError(null);
     setDraft((current) => ({ ...current, [key]: value }));
   };
@@ -73,6 +81,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
   const generatePreview = async () => {
     const requestedUrl = draft.url.trim();
     const generation = ++previewGeneration.current;
+    const fieldRevisions = { ...previewFieldRevisions.current };
     setPreviewBusy(true);
     setPreviewError(null);
     try {
@@ -82,9 +91,15 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
         ? {
             ...current,
             url: preview.finalUrl,
-            title: current.title.trim() || preview.title || current.title,
-            description: current.description?.trim() ? current.description : preview.description,
-            previewEnabled: true,
+            title: fieldRevisions.title === previewFieldRevisions.current.title
+              ? current.title.trim() || preview.title || current.title
+              : current.title,
+            description: fieldRevisions.description === previewFieldRevisions.current.description
+              ? current.description?.trim() ? current.description : preview.description
+              : current.description,
+            previewEnabled: fieldRevisions.previewEnabled === previewFieldRevisions.current.previewEnabled
+              ? true
+              : current.previewEnabled,
             previewImageUrl: preview.imageUrl,
             previewSiteName: preview.siteName,
           }
