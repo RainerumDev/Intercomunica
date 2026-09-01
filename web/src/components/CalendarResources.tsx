@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CalendarLinks } from "../types";
 
 interface CalendarResourcesProps {
@@ -21,13 +21,22 @@ export function CalendarResources({ links, onRotate }: CalendarResourcesProps) {
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const [rotationError, setRotationError] = useState<string | null>(null);
   const [rotating, setRotating] = useState(false);
+  const personalTriggerRef = useRef<HTMLButtonElement>(null);
+  const personalDialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  const closePersonalDialog = () => {
+    setPersonalDialogOpen(false);
+    personalTriggerRef.current?.focus();
+  };
 
   useEffect(() => {
     if (!personalDialogOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPersonalDialogOpen(false);
+      if (event.key === "Escape") closePersonalDialog();
     };
     document.addEventListener("keydown", onKeyDown);
+    closeButtonRef.current?.focus();
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [personalDialogOpen]);
 
@@ -35,6 +44,26 @@ export function CalendarResources({ links, onRotate }: CalendarResourcesProps) {
     setCopyMessage(null);
     setRotationError(null);
     setPersonalDialogOpen(true);
+  };
+
+  const trapDialogFocus = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab") return;
+    const dialog = personalDialogRef.current;
+    if (!dialog) return;
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
+    ).filter((element) => element.getAttribute("aria-hidden") !== "true");
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   };
 
   const copyHttpsUrl = async () => {
@@ -103,6 +132,7 @@ export function CalendarResources({ links, onRotate }: CalendarResourcesProps) {
           <p className="mt-1 text-sm text-gray-500">Solo gli appuntamenti che ti riguardano.</p>
           <button
             type="button"
+            ref={personalTriggerRef}
             onClick={openPersonalDialog}
             disabled={!personalAvailable}
             className="mt-4 rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:bg-gray-200 disabled:text-gray-500"
@@ -118,14 +148,16 @@ export function CalendarResources({ links, onRotate }: CalendarResourcesProps) {
       {personalDialogOpen && personalAvailable && (
         <div
           className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
-          onClick={() => setPersonalDialogOpen(false)}
+          onClick={closePersonalDialog}
         >
           <div
+            ref={personalDialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="personal-calendar-title"
             className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl"
             onClick={(event) => event.stopPropagation()}
+            onKeyDown={trapDialogFocus}
           >
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -136,7 +168,8 @@ export function CalendarResources({ links, onRotate }: CalendarResourcesProps) {
               </div>
               <button
                 type="button"
-                onClick={() => setPersonalDialogOpen(false)}
+                ref={closeButtonRef}
+                onClick={closePersonalDialog}
                 aria-label="Chiudi"
                 className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >

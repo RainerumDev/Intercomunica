@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CalendarResources, confirmRotation } from "./CalendarResources";
 import type { CalendarLinks } from "../types";
 
@@ -10,6 +13,29 @@ const links: CalendarLinks = {
   personalFeedEligible: true,
   lastFetchedAt: null,
 };
+
+let container: HTMLDivElement;
+let root: Root;
+
+beforeEach(() => {
+  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+});
+
+afterEach(async () => {
+  await act(async () => root.unmount());
+  container.remove();
+});
+
+function buttonByText(text: string): HTMLButtonElement {
+  const button = Array.from(container.querySelectorAll("button")).find(
+    (candidate) => candidate.textContent === text
+  );
+  if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${text}`);
+  return button;
+}
 
 describe("CalendarResources", () => {
   it("keeps both calendar choices visible and sends the general choice to Google", () => {
@@ -55,5 +81,59 @@ describe("confirmRotation", () => {
     );
 
     expect(rotated).toBe(false);
+  });
+});
+
+describe("CalendarResources personal dialog", () => {
+  it("keeps keyboard focus inside the dialog and restores the trigger for every close path", async () => {
+    await act(async () => {
+      root.render(<CalendarResources links={links} onRotate={async () => links} />);
+    });
+
+    const trigger = buttonByText("Collega il mio calendario");
+    const openDialog = async () => {
+      await act(async () => trigger.click());
+      const dialog = container.querySelector('[role="dialog"]');
+      if (!(dialog instanceof HTMLDivElement)) throw new Error("Dialog not found");
+      return dialog;
+    };
+
+    let dialog = await openDialog();
+    const closeButton = dialog.querySelector('button[aria-label="Chiudi"]');
+    if (!(closeButton instanceof HTMLButtonElement)) throw new Error("Close button not found");
+    const rotateButton = Array.from(dialog.querySelectorAll("button")).find(
+      (button) => button.textContent === "Rigenera collegamento"
+    );
+    if (!(rotateButton instanceof HTMLButtonElement)) throw new Error("Rotate button not found");
+
+    expect(document.activeElement).toBe(closeButton);
+
+    rotateButton.focus();
+    await act(async () => {
+      rotateButton.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+    });
+    expect(document.activeElement).toBe(closeButton);
+
+    closeButton.focus();
+    await act(async () => {
+      closeButton.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }));
+    });
+    expect(document.activeElement).toBe(rotateButton);
+
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    dialog = await openDialog();
+    await act(async () => dialog.parentElement?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    dialog = await openDialog();
+    const closeAgain = dialog.querySelector('button[aria-label="Chiudi"]');
+    if (!(closeAgain instanceof HTMLButtonElement)) throw new Error("Close button not found");
+    await act(async () => closeAgain.click());
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 });
