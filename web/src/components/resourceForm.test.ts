@@ -71,4 +71,19 @@ describe("resource form helpers", () => {
     expect(resourceCardFallback({ previewSiteName: "Example", url: "https://www.example.org/a" })).toBe("Example");
     expect(resourceCardFallback({ previewSiteName: null, url: "https://www.example.org/a" })).toBe("example.org");
   });
+
+  it("returns a safe textual fallback for malformed URLs", () => {
+    expect(resourceCardFallback({ previewSiteName: null, url: "not a URL" })).toBe("not a URL");
+  });
+
+  it("preserves the input object and subgroup array during normalization", () => {
+    const subgroupIds = [" g1 ", "g1"];
+    const draft = { ...emptyResourceDraft, subgroupIds, isGlobal: false };
+    const before = { ...draft, subgroupIds: [...subgroupIds] };
+
+    normalizeResourceDraft(draft);
+
+    expect(draft).toEqual(before);
+    expect(draft.subgroupIds).toBe(subgroupIds);
+  });
 });

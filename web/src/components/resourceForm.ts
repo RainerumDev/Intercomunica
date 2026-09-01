@@ -43,5 +43,9 @@ export function moveResourceId(
 
 export function resourceCardFallback(resource: Pick<SharedResourceDraft, "url" | "previewSiteName">): string {
   if (resource.previewSiteName) return resource.previewSiteName;
-  return new URL(resource.url).hostname.replace(/^www\./, "");
+  try {
+    return new URL(resource.url).hostname.replace(/^www\./, "");
+  } catch {
+    return resource.url;
+  }
 }
