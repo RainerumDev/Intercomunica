@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import type { Member, Subgroup } from "../types";
 import EmailComposer from "../components/EmailComposer";
 import MemberSubgroupCell from "../components/MemberSubgroupCell";
+import { useDialogFocus } from "../components/useDialogFocus";
 
 export default function Directory() {
   const { me } = useAuth();
@@ -17,6 +18,11 @@ export default function Directory() {
   const [newFolder, setNewFolder] = useState("");
   const [editingSubgroup, setEditingSubgroup] = useState<Subgroup | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const editDialogTitleId = useId();
+  const editDialogRef = useDialogFocus({
+    active: Boolean(editingSubgroup),
+    onClose: () => setEditingSubgroup(null),
+  });
 
   const EditIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -248,7 +254,7 @@ export default function Directory() {
           )}
         </div>
         {filteredSubgroups.length === 0 && (
-          <p className="text-sm text-gray-400 py-4">
+          <p className="field-hint py-4 text-sm">
             {subgroups.length === 0
               ? "Nessun sottogruppo definito."
               : "Nessun sottogruppo corrisponde alla ricerca."}
@@ -295,7 +301,7 @@ export default function Directory() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={2} className="px-4 py-8 text-center text-gray-400">
+                  <td colSpan={2} className="field-hint px-4 py-8 text-center">
                     Nessun docente trovato. {members.length === 0 && "Esegui la sincronizzazione dalle Impostazioni."}
                   </td>
                 </tr>
@@ -309,8 +315,25 @@ export default function Directory() {
 
       {editingSubgroup && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => setEditingSubgroup(null)}>
-          <div className="dialog-panel" onClick={(e) => e.stopPropagation()}>
-            <h2 className="section-heading mb-4">Modifica sottogruppo</h2>
+          <div
+            ref={editDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={editDialogTitleId}
+            tabIndex={-1}
+            className="dialog-panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 id={editDialogTitleId} className="section-heading">Modifica sottogruppo</h2>
+              <button
+                aria-label="Chiudi modifica sottogruppo"
+                onClick={() => setEditingSubgroup(null)}
+                className="text-action text-xl"
+              >
+                ×
+              </button>
+            </div>
             <div className="space-y-4">
               <input
                 value={editingSubgroup.name}
@@ -335,7 +358,7 @@ export default function Directory() {
                       <button onClick={() => handleModalRemoveMember(m.id)} className="text-red-600 hover:text-red-800 ml-2 shrink-0">Rimuovi</button>
                     </div>
                   ))}
-                  {editingSubgroup.members.length === 0 && <p className="text-gray-400 text-xs py-1">Nessun docente in questo gruppo.</p>}
+                  {editingSubgroup.members.length === 0 && <p className="field-hint py-1 text-xs">Nessun docente in questo gruppo.</p>}
                   
                   <h3 className="text-sm font-semibold text-gray-700 mt-4 mb-2">Altri docenti</h3>
                   {members.filter(m => !editingSubgroup.members.some(em => em.id === m.id)).map(m => (

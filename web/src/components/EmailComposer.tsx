@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { api } from "../api";
 import type { Subgroup } from "../types";
+import { useDialogFocus } from "./useDialogFocus";
 
 interface Props {
   subgroup: Subgroup;
@@ -15,6 +16,8 @@ export default function EmailComposer({ subgroup, onClose }: Props) {
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const titleId = useId();
+  const dialogRef = useDialogFocus({ onClose });
 
   const send = async () => {
     setSending(true);
@@ -37,14 +40,19 @@ export default function EmailComposer({ subgroup, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         className="dialog-panel max-w-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="section-heading">
+          <h2 id={titleId} className="section-heading">
             ✉️ Email a «{subgroup.name}»
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">
+          <button aria-label="Chiudi composizione email" onClick={onClose} className="text-action text-xl">
             ×
           </button>
         </div>

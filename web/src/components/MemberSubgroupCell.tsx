@@ -36,10 +36,13 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
     const rect = btnRef.current?.getBoundingClientRect();
     if (rect) {
       const popupHeight = 260; // stima dell'altezza massima
+      const gutter = 8;
+      const popupWidth = Math.min(panelRef.current?.offsetWidth || 256, window.innerWidth - gutter * 2);
+      const left = Math.min(Math.max(rect.left, gutter), Math.max(gutter, window.innerWidth - popupWidth - gutter));
       if (rect.bottom + popupHeight > window.innerHeight) {
-        setPos({ bottom: window.innerHeight - rect.top + 4, left: rect.left });
+        setPos({ bottom: window.innerHeight - rect.top + 4, left });
       } else {
-        setPos({ top: rect.bottom + 4, left: rect.left });
+        setPos({ top: rect.bottom + 4, left });
       }
     }
   };
@@ -77,7 +80,7 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {member.subgroups.length === 0 && !isAdmin && (
-        <span className="text-xs text-gray-400">Nessun sottogruppo</span>
+        <span className="field-hint text-xs">Nessun sottogruppo</span>
       )}
 
       {member.subgroups.map((s) => (
@@ -118,6 +121,7 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
               top: pos.top !== undefined ? pos.top : "auto",
               bottom: pos.bottom !== undefined ? pos.bottom : "auto",
               left: pos.left,
+              maxWidth: "calc(100vw - 1rem)",
             }}
             className="popover-panel"
           >
@@ -130,7 +134,7 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
             />
             <div className="max-h-56 overflow-y-auto">
               {available.length === 0 ? (
-                <p className="px-2 py-3 text-center text-xs text-gray-400">
+                <p className="field-hint px-2 py-3 text-center text-xs">
                   {allSubgroups.length === member.subgroups.length
                     ? "Già in tutti i sottogruppi"
                     : "Nessun sottogruppo trovato"}

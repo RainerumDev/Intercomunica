@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { api } from "../api";
 import type { AppEvent, Subgroup, Tag } from "../types";
 import { asAllDayRange, asTimedValue, commitPendingTag, toEventIso } from "./eventForm";
+import { useDialogFocus } from "./useDialogFocus";
 
 export interface EventDraft {
   id?: string;
@@ -33,6 +34,8 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isEdit = Boolean(draft.id);
+  const titleId = useId();
+  const dialogRef = useDialogFocus({ closeDisabled: busy, onClose });
   const subgroupFolders = useMemo(() => {
     const grouped = new Map<string, Subgroup[]>();
     for (const subgroup of subgroups) {
@@ -43,14 +46,6 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
       .sort(([a], [b]) => a.localeCompare(b, "it"))
       .map(([folder, entries]) => [folder, entries.sort((a, b) => a.name.localeCompare(b.name, "it"))] as const);
   }, [subgroups]);
-
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) onClose();
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [busy, onClose]);
 
   const set = <K extends keyof EventDraft>(key: K, value: EventDraft[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -116,14 +111,19 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         className="dialog-panel max-w-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="section-heading">
+          <h2 id={titleId} className="section-heading">
             {readOnly ? "Dettagli evento" : isEdit ? "Modifica evento" : "Nuovo evento"}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">
+          <button aria-label="Chiudi finestra evento" onClick={onClose} className="text-action text-xl">
             ×
           </button>
         </div>
@@ -220,7 +220,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
           {/* Sottogruppi destinatari */}
           <div>
             <p className="text-sm font-medium text-gray-700 mb-1.5">
-              Sottogruppi destinatari {form.isGlobal && <span className="text-gray-400">(ignorati per eventi visibili a tutti)</span>}
+              Sottogruppi destinatari {form.isGlobal && <span className="field-hint">(ignorati per eventi visibili a tutti)</span>}
             </p>
             <div className="space-y-3">
               {subgroupFolders.map(([folder, entries]) => (
@@ -245,7 +245,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
                 </div>
               ))}
               {subgroups.length === 0 && (
-                <p className="text-sm text-gray-400">Nessun sottogruppo definito.</p>
+                <p className="field-hint text-sm">Nessun sottogruppo definito.</p>
               )}
             </div>
           </div>

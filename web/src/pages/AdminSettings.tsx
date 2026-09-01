@@ -219,7 +219,7 @@ export function CalendarSettings() {
 
         {/* Fallback: manual entry — works even without Directory list privileges */}
         <div className="mt-4 border-t border-gray-100 pt-3">
-          <p className="text-xs text-gray-400 mb-2">
+          <p className="field-hint mb-2 text-xs">
             In alternativa, inserisci direttamente l'indirizzo del gruppo:
           </p>
           <div className="flex flex-col gap-2 sm:flex-row">
