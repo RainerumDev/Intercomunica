@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { adminResourcesApi } from "../api";
 import type { SharedResourceDraft, Subgroup } from "../types";
 import { normalizeResourceDraft } from "./resourceForm";
@@ -29,6 +29,12 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [validationAttempted, setValidationAttempted] = useState(false);
+  const previewGeneration = useRef(0);
+
+  useEffect(() => () => {
+    previewGeneration.current += 1;
+  }, []);
 
   const subgroupFolders = useMemo(() => {
     const grouped = new Map<string, Subgroup[]>();
@@ -44,8 +50,17 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
       ] as const);
   }, [subgroups]);
 
-  const set = <K extends keyof SharedResourceDraft>(key: K, value: SharedResourceDraft[K]) =>
+  const set = <K extends keyof SharedResourceDraft>(key: K, value: SharedResourceDraft[K]) => {
+    setSaveError(null);
     setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const setUrl = (url: string) => {
+    previewGeneration.current += 1;
+    setPreviewBusy(false);
+    setPreviewError(null);
+    set("url", url);
+  };
 
   const toggleSubgroup = (id: string) =>
     set(
@@ -56,27 +71,46 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
     );
 
   const generatePreview = async () => {
+    const requestedUrl = draft.url.trim();
+    const generation = ++previewGeneration.current;
     setPreviewBusy(true);
     setPreviewError(null);
     try {
-      const preview = await adminResourcesApi.preview(draft.url.trim());
-      setDraft((current) => ({
-        ...current,
-        url: preview.finalUrl,
-        title: current.title.trim() || preview.title || current.title,
-        description: current.description?.trim() ? current.description : preview.description,
-        previewEnabled: true,
-        previewImageUrl: preview.imageUrl,
-        previewSiteName: preview.siteName,
-      }));
+      const preview = await adminResourcesApi.preview(requestedUrl);
+      if (generation !== previewGeneration.current) return;
+      setDraft((current) => current.url.trim() === requestedUrl
+        ? {
+            ...current,
+            url: preview.finalUrl,
+            title: current.title.trim() || preview.title || current.title,
+            description: current.description?.trim() ? current.description : preview.description,
+            previewEnabled: true,
+            previewImageUrl: preview.imageUrl,
+            previewSiteName: preview.siteName,
+          }
+        : current
+      );
     } catch (error) {
-      setPreviewError((error as Error).message);
+      if (generation === previewGeneration.current) {
+        setPreviewError((error as Error).message);
+      }
     } finally {
-      setPreviewBusy(false);
+      if (generation === previewGeneration.current) {
+        setPreviewBusy(false);
+      }
     }
   };
 
-  const save = async () => {
+  const urlError = isPublicWebUrl(draft.url.trim()) ? null : "Inserisci un URL HTTP o HTTPS valido.";
+  const titleError = draft.title.trim() ? null : "Inserisci un titolo.";
+  const subgroupError = draft.isGlobal || draft.subgroupIds.length > 0
+    ? null
+    : "Seleziona almeno un sottogruppo.";
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setValidationAttempted(true);
+    if (urlError || titleError || subgroupError) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -87,18 +121,13 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
     }
   };
 
-  const valid =
-    isPublicWebUrl(draft.url.trim()) &&
-    Boolean(draft.title.trim()) &&
-    (draft.isGlobal || draft.subgroupIds.length > 0);
-
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-6">
       <h2 className="mb-4 text-lg font-semibold text-gray-900">
         {initialDraft.title ? "Modifica risorsa" : "Nuova risorsa"}
       </h2>
 
-      <div className="space-y-4">
+      <form className="space-y-4" onSubmit={save} noValidate>
         <div>
           <label htmlFor="resource-url" className="mb-1 block text-sm font-medium text-gray-700">
             URL
@@ -108,7 +137,9 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
               id="resource-url"
               type="url"
               value={draft.url}
-              onChange={(event) => set("url", event.target.value)}
+              onChange={(event) => setUrl(event.target.value)}
+              aria-invalid={validationAttempted && Boolean(urlError)}
+              aria-describedby={validationAttempted && urlError ? "resource-url-error" : undefined}
               placeholder="https://esempio.it/risorsa"
               className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
@@ -125,6 +156,9 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
             <p role="alert" className="mt-2 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
               {previewError}. Puoi comunque completare titolo e descrizione e salvare la risorsa.
             </p>
+          )}
+          {validationAttempted && urlError && (
+            <p id="resource-url-error" className="mt-1 text-sm text-red-700">{urlError}</p>
           )}
         </div>
 
@@ -145,9 +179,14 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
             id="resource-title"
             value={draft.title}
             onChange={(event) => set("title", event.target.value)}
+            aria-invalid={validationAttempted && Boolean(titleError)}
+            aria-describedby={validationAttempted && titleError ? "resource-title-error" : undefined}
             maxLength={160}
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
           />
+          {validationAttempted && titleError && (
+            <p id="resource-title-error" className="mt-1 text-sm text-red-700">{titleError}</p>
+          )}
         </div>
 
         <div>
@@ -174,14 +213,17 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
         </label>
 
         {!draft.isGlobal && (
-          <div>
-            <p className="mb-2 text-sm font-medium text-gray-700">Sottogruppi destinatari</p>
+          <fieldset
+            aria-invalid={validationAttempted && Boolean(subgroupError)}
+            aria-describedby={validationAttempted && subgroupError ? "resource-subgroups-error" : undefined}
+          >
+            <legend className="mb-2 text-sm font-medium text-gray-700">Sottogruppi destinatari</legend>
             <div className="space-y-3">
               {subgroupFolders.map(([folder, entries]) => (
-                <fieldset key={folder} className="rounded-md border border-gray-200 p-3">
-                  <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <div key={folder} role="group" aria-label={folder} className="rounded-md border border-gray-200 p-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                     {folder}
-                  </legend>
+                  </p>
                   <div className="flex flex-wrap gap-3">
                     {entries.map((subgroup) => (
                       <label key={subgroup.id} className="flex items-center gap-2 text-sm text-gray-700">
@@ -194,13 +236,16 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
                       </label>
                     ))}
                   </div>
-                </fieldset>
+                </div>
               ))}
               {subgroups.length === 0 && (
                 <p className="text-sm text-gray-500">Nessun sottogruppo disponibile.</p>
               )}
             </div>
-          </div>
+            {validationAttempted && subgroupError && (
+              <p id="resource-subgroups-error" className="mt-2 text-sm text-red-700">{subgroupError}</p>
+            )}
+          </fieldset>
         )}
 
         <div>
@@ -226,15 +271,14 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
             Annulla
           </button>
           <button
-            type="button"
-            onClick={save}
-            disabled={saving || !valid}
+            type="submit"
+            disabled={saving}
             className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50"
           >
             {saving ? "Salvataggio…" : "Salva"}
           </button>
         </div>
-      </div>
+      </form>
     </section>
   );
 }

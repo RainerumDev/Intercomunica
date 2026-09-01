@@ -430,10 +430,14 @@ type SettingsTab = "calendar" | "resources";
 
 export default function AdminSettings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("calendar");
+  const [resourcesActivated, setResourcesActivated] = useState(false);
 
-  const selectTab = (tab: SettingsTab) => {
+  const selectTab = (tab: SettingsTab, focus = true) => {
+    if (tab === "resources") setResourcesActivated(true);
     setActiveTab(tab);
-    requestAnimationFrame(() => document.getElementById(`settings-${tab}-tab`)?.focus());
+    if (focus) {
+      requestAnimationFrame(() => document.getElementById(`settings-${tab}-tab`)?.focus());
+    }
   };
 
   const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
@@ -463,7 +467,7 @@ export default function AdminSettings() {
           aria-selected={activeTab === "calendar"}
           aria-controls="settings-calendar-panel"
           tabIndex={activeTab === "calendar" ? 0 : -1}
-          onClick={() => setActiveTab("calendar")}
+          onClick={() => selectTab("calendar", false)}
           onKeyDown={onTabKeyDown}
           className={`border-b-2 px-4 py-2 text-sm font-medium ${
             activeTab === "calendar"
@@ -480,7 +484,7 @@ export default function AdminSettings() {
           aria-selected={activeTab === "resources"}
           aria-controls="settings-resources-panel"
           tabIndex={activeTab === "resources" ? 0 : -1}
-          onClick={() => setActiveTab("resources")}
+          onClick={() => selectTab("resources", false)}
           onKeyDown={onTabKeyDown}
           className={`border-b-2 px-4 py-2 text-sm font-medium ${
             activeTab === "resources"
@@ -498,7 +502,7 @@ export default function AdminSettings() {
         aria-labelledby="settings-calendar-tab"
         hidden={activeTab !== "calendar"}
       >
-        {activeTab === "calendar" && <CalendarSettings />}
+        <CalendarSettings />
       </div>
       <div
         id="settings-resources-panel"
@@ -506,7 +510,7 @@ export default function AdminSettings() {
         aria-labelledby="settings-resources-tab"
         hidden={activeTab !== "resources"}
       >
-        {activeTab === "resources" && <AdminResources />}
+        {resourcesActivated && <AdminResources />}
       </div>
     </div>
   );

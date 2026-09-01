@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { adminResourcesApi, api } from "../api";
 import ResourceCard from "../components/ResourceCard";
 import ResourceEditor from "../components/ResourceEditor";
@@ -12,24 +12,52 @@ export default function AdminResources() {
   const [subgroups, setSubgroups] = useState<Subgroup[] | null>(null);
   const [editor, setEditor] = useState<EditorState>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   const subgroupNames = useMemo(
     () => new Map((subgroups ?? []).map((subgroup) => [subgroup.id, subgroup.name])),
     [subgroups]
   );
 
-  const loadResources = () => adminResourcesApi.list().then(setResources);
-
-  useEffect(() => {
-    Promise.all([
-      loadResources(),
-      api.get<Subgroup[]>("/api/subgroups").then(setSubgroups),
-    ]).catch((loadError: Error) => setError(loadError.message));
+  const loadCollection = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [loadedResources, loadedSubgroups] = await Promise.all([
+        adminResourcesApi.list(),
+        api.get<Subgroup[]>("/api/subgroups"),
+      ]);
+      setResources(loadedResources);
+      setSubgroups(loadedSubgroups);
+    } catch (error) {
+      setLoadError((error as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  const refreshResources = async () => {
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      setResources(await adminResourcesApi.list());
+    } catch (error) {
+      setRefreshError((error as Error).message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadCollection();
+  }, [loadCollection]);
+
   const openNew = () => {
-    setError(null);
+    setMutationError(null);
     setEditor({ resourceId: null, draft: { ...emptyResourceDraft, subgroupIds: [] } });
   };
 
@@ -44,7 +72,7 @@ export default function AdminResources() {
       isGlobal: resource.isGlobal,
       subgroupIds: [...resource.subgroupIds],
     };
-    setError(null);
+    setMutationError(null);
     setEditor({ resourceId: resource.id, draft });
   };
 
@@ -65,13 +93,15 @@ export default function AdminResources() {
   const remove = async (resource: SharedResource) => {
     if (!window.confirm(`Eliminare la risorsa «${resource.title}»?`)) return;
     setBusyId(resource.id);
-    setError(null);
+    setMutationError(null);
     try {
       await adminResourcesApi.remove(resource.id);
-      await loadResources();
-      if (editor?.resourceId === resource.id) setEditor(null);
+      setResources((current) => current?.filter((item) => item.id !== resource.id) ?? []);
+      setEditor((current) => current?.resourceId === resource.id ? null : current);
+      setBusyId(null);
+      await refreshResources();
     } catch (removeError) {
-      setError((removeError as Error).message);
+      setMutationError((removeError as Error).message);
     } finally {
       setBusyId(null);
     }
@@ -88,22 +118,38 @@ export default function AdminResources() {
     const optimistic = nextIds.map((id, sortOrder) => ({ ...byId.get(id)!, sortOrder }));
     setResources(optimistic);
     setBusyId(resourceId);
-    setError(null);
+    setMutationError(null);
     try {
       setResources(await adminResourcesApi.reorder(nextIds));
     } catch (moveError) {
       setResources(previous);
-      setError((moveError as Error).message);
+      setMutationError((moveError as Error).message);
     } finally {
       setBusyId(null);
     }
   };
 
-  if (error && (!resources || !subgroups)) return <p className="text-red-600">{error}</p>;
-  if (!resources || !subgroups) return <p className="text-gray-500">Caricamento risorse…</p>;
+  if (loading && (!resources || !subgroups)) {
+    return <p role="status" aria-live="polite" className="text-gray-500">Caricamento risorse…</p>;
+  }
+  if (loadError && (!resources || !subgroups)) {
+    return (
+      <div className="rounded bg-red-50 p-4 text-sm text-red-700">
+        <p role="alert">{loadError}</p>
+        <button
+          type="button"
+          onClick={() => void loadCollection()}
+          className="mt-3 rounded border border-red-600 px-3 py-1.5 font-medium hover:bg-red-100"
+        >
+          Riprova
+        </button>
+      </div>
+    );
+  }
+  if (!resources || !subgroups) return null;
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="max-w-4xl space-y-6" aria-busy={busyId !== null || refreshing}>
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Risorse condivise</h1>
@@ -122,7 +168,28 @@ export default function AdminResources() {
         )}
       </div>
 
-      {error && <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {mutationError && (
+        <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+          {mutationError}
+        </p>
+      )}
+      {refreshError && (
+        <div className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <p role="alert">{refreshError}</p>
+          <button
+            type="button"
+            onClick={() => void refreshResources()}
+            className="mt-2 rounded border border-amber-700 px-2.5 py-1 font-medium hover:bg-amber-100"
+          >
+            Riprova aggiornamento
+          </button>
+        </div>
+      )}
+      {(busyId !== null || refreshing) && (
+        <p role="status" aria-live="polite" className="sr-only">
+          {refreshing ? "Aggiornamento elenco…" : "Operazione in corso…"}
+        </p>
+      )}
 
       {editor && (
         <ResourceEditor
