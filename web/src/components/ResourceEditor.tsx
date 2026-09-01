@@ -150,14 +150,14 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
   };
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-6">
-      <h2 className="mb-4 text-lg font-semibold text-gray-900">
+    <section className="surface-card surface-card--padded">
+      <h2 className="section-heading mb-4">
         {initialDraft.title ? "Modifica risorsa" : "Nuova risorsa"}
       </h2>
 
       <form className="space-y-4" onSubmit={save} noValidate>
         <div>
-          <label htmlFor="resource-url" className="mb-1 block text-sm font-medium text-gray-700">
+          <label htmlFor="resource-url" className="form-label">
             URL
           </label>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -170,19 +170,19 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
               aria-invalid={validationAttempted && Boolean(urlError)}
               aria-describedby={validationAttempted && urlError ? "resource-url-error" : undefined}
               placeholder="https://esempio.it/risorsa"
-              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="form-control flex-1"
             />
             <button
               type="button"
               onClick={generatePreview}
               disabled={disabled || previewBusy || !isPublicWebUrl(draft.url.trim())}
-              className="rounded-md border border-blue-700 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+              className="button button--secondary"
             >
               {previewBusy ? "Generazione…" : "Genera anteprima"}
             </button>
           </div>
           {previewError && (
-            <p role="alert" className="mt-2 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <p role="alert" className="feedback feedback--warning mt-2">
               {previewError}. Puoi comunque completare titolo e descrizione e salvare la risorsa.
             </p>
           )}
@@ -202,7 +202,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
         </label>
 
         <div>
-          <label htmlFor="resource-title" className="mb-1 block text-sm font-medium text-gray-700">
+          <label htmlFor="resource-title" className="form-label">
             Titolo
           </label>
           <input
@@ -213,7 +213,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
             aria-invalid={validationAttempted && Boolean(titleError)}
             aria-describedby={validationAttempted && titleError ? "resource-title-error" : undefined}
             maxLength={160}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            className="form-control"
           />
           {validationAttempted && titleError && (
             <p id="resource-title-error" className="mt-1 text-sm text-red-700">{titleError}</p>
@@ -221,7 +221,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
         </div>
 
         <div>
-          <label htmlFor="resource-description" className="mb-1 block text-sm font-medium text-gray-700">
+          <label htmlFor="resource-description" className="form-label">
             Descrizione
           </label>
           <textarea
@@ -231,7 +231,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
             onChange={(event) => set("description", event.target.value || null)}
             maxLength={500}
             rows={3}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            className="form-control"
           />
         </div>
 
@@ -283,14 +283,14 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
         )}
 
         <div>
-          <p className="mb-2 text-sm font-medium text-gray-700">Anteprima</p>
+          <p className="form-label">Anteprima</p>
           <div className="max-w-md">
             <ResourceCard resource={draft} linked={false} />
           </div>
         </div>
 
         {saveError && (
-          <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p role="alert" className="feedback feedback--error">
             {saveError}
           </p>
         )}
@@ -300,14 +300,14 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
             type="button"
             onClick={onCancel}
             disabled={disabled || saving}
-            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="button button--neutral"
           >
             Annulla
           </button>
           <button
             type="submit"
             disabled={disabled || saving}
-            className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50"
+            className="button button--primary"
           >
             {saving ? "Salvataggio…" : "Salva"}
           </button>

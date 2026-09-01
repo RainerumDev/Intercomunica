@@ -141,16 +141,16 @@ export function CalendarSettings() {
     }
   };
 
-  if (!cfg) return <p className="text-gray-500">Caricamento…</p>;
+  if (!cfg) return <p role="status" aria-live="polite" className="portal-status">Caricamento…</p>;
 
   return (
-    <div className="max-w-3xl space-y-8">
-      <h1 className="text-2xl font-bold text-gray-900">Impostazioni</h1>
-      {error && <p className="rounded bg-red-50 text-red-700 px-3 py-2 text-sm">{error}</p>}
+    <div className="page page--narrow">
+      <h1 className="page-heading">Impostazioni</h1>
+      {error && <p role="alert" className="feedback feedback--error">{error}</p>}
 
       {/* Flusso 1.1 — account master */}
-      <section className="rounded-lg bg-white border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-800 mb-2">1. Account master</h2>
+      <section className="surface-card surface-card--padded">
+        <h2 className="section-heading mb-2">1. Account master</h2>
         {cfg.masterConnected ? (
           <p className="text-sm text-green-700">
             ✓ Collegato: <strong>{cfg.masterEmail}</strong>
@@ -163,15 +163,15 @@ export function CalendarSettings() {
         )}
         <a
           href="/api/admin/master/connect"
-          className="mt-3 inline-block rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800"
+          className="button button--primary mt-3"
         >
           {cfg.masterConnected ? "Ricollega account" : "Collega account Google"}
         </a>
       </section>
 
       {/* Flusso 1.2 — gruppo principale */}
-      <section className="rounded-lg bg-white border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-800 mb-2">2. Gruppo Google principale</h2>
+      <section className="surface-card surface-card--padded">
+        <h2 className="section-heading mb-2">2. Gruppo Google principale</h2>
         <p className="text-sm text-gray-500 mb-3">
           Il gruppo che contiene tutti i docenti (es. docenti@rainerum.it).
           {cfg.mainGroupEmail && (
@@ -185,7 +185,7 @@ export function CalendarSettings() {
           <button
             onClick={loadGroups}
             disabled={!cfg.masterConnected}
-            className="rounded-md border border-blue-700 text-blue-700 px-4 py-2 text-sm font-medium hover:bg-blue-50 disabled:opacity-50"
+            className="button button--secondary"
           >
             Carica gruppi del dominio
           </button>
@@ -194,7 +194,7 @@ export function CalendarSettings() {
             <select
               value={selectedGroup}
               onChange={(e) => setSelectedGroup(e.target.value)}
-              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="form-control flex-1"
             >
               <option value="">— seleziona gruppo —</option>
               {groups.map((g) => (
@@ -206,7 +206,7 @@ export function CalendarSettings() {
             <button
               onClick={() => saveGroup(selectedGroup)}
               disabled={!selectedGroup}
-              className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
+              className="button button--primary"
             >
               Salva
             </button>
@@ -214,7 +214,7 @@ export function CalendarSettings() {
         )}
 
         {groupsHint && (
-          <p className="mt-2 rounded bg-amber-50 text-amber-800 px-3 py-2 text-sm">{groupsHint}</p>
+          <p className="feedback feedback--warning mt-2">{groupsHint}</p>
         )}
 
         {/* Fallback: manual entry — works even without Directory list privileges */}
@@ -230,12 +230,12 @@ export function CalendarSettings() {
               onKeyDown={(e) => e.key === "Enter" && manualGroup.includes("@") && saveGroup(manualGroup.trim())}
               placeholder="docenti@rainerum.it"
               disabled={!cfg.masterConnected}
-              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm disabled:opacity-50"
+              className="form-control flex-1"
             />
             <button
               onClick={() => saveGroup(manualGroup.trim())}
               disabled={!cfg.masterConnected || !manualGroup.includes("@")}
-              className="rounded-md border border-blue-700 text-blue-700 px-4 py-2 text-sm font-medium hover:bg-blue-50 disabled:opacity-50"
+              className="button button--secondary"
             >
               Salva
             </button>
@@ -244,8 +244,8 @@ export function CalendarSettings() {
       </section>
 
       {/* Nome dei calendari docente */}
-      <section className="rounded-lg bg-white border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-800 mb-2">3. Nome dei calendari</h2>
+      <section className="surface-card surface-card--padded">
+        <h2 className="section-heading mb-2">3. Nome dei calendari</h2>
         <p className="text-sm text-gray-500 mb-3">
           Modello usato per il nome del calendario di ogni docente. Usa il segnaposto{" "}
           <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs">{NAME_PLACEHOLDER}</code> per
@@ -260,19 +260,19 @@ export function CalendarSettings() {
               setNameSaved(false);
             }}
             placeholder={`Calendario Rainerum 26/27 - ${NAME_PLACEHOLDER}`}
-            className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm font-mono"
+            className="form-control flex-1 font-mono"
           />
           <button
             onClick={insertPlaceholder}
             title="Inserisci il segnaposto del nome docente nella posizione del cursore"
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 whitespace-nowrap"
+            className="button button--neutral whitespace-nowrap"
           >
             + Nome docente
           </button>
           <button
             onClick={saveNameTemplate}
             disabled={!nameTemplate.trim() || nameTemplate === cfg.calendarNameTemplate}
-            className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
+            className="button button--primary"
           >
             Salva
           </button>
@@ -287,19 +287,19 @@ export function CalendarSettings() {
           </span>
         </p>
         {!nameTemplate.includes(NAME_PLACEHOLDER) && nameTemplate.trim() !== "" && (
-          <p className="mt-2 rounded bg-amber-50 text-amber-800 px-3 py-2 text-sm">
+          <p className="feedback feedback--warning mt-2">
             ⚠️ Senza {NAME_PLACEHOLDER} tutti i calendari avranno lo stesso identico nome.
           </p>
         )}
         {nameSaved && (
-          <p className="mt-2 rounded bg-green-50 text-green-700 px-3 py-2 text-sm">
+          <p className="feedback feedback--success mt-2">
             ✓ Salvato. I calendari esistenti verranno rinominati alla prossima sincronizzazione.
           </p>
         )}
       </section>
 
-      <section className="rounded-lg bg-white border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-800 mb-2">4. Calendario generale</h2>
+      <section className="surface-card surface-card--padded">
+        <h2 className="section-heading mb-2">4. Calendario generale</h2>
         <p className="text-sm text-gray-500 mb-3">
           Tutti gli eventi vengono salvati qui. Gli eventi creati direttamente su Google vengono
           importati come visibili a tutti; la prima importazione considera gli ultimi 30 giorni e il futuro.
@@ -313,12 +313,12 @@ export function CalendarSettings() {
             value={generalCalendarId}
             onChange={(event) => setGeneralCalendarId(event.target.value)}
             placeholder={GENERAL_CALENDAR_EXAMPLE}
-            className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm font-mono"
+            className="form-control flex-1 font-mono"
           />
           <button
             onClick={saveGeneralCalendar}
             disabled={savingGeneralCalendar || !generalCalendarId.trim() || generalCalendarId.trim() === cfg.generalCalendarId}
-            className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
+            className="button button--primary"
           >
             {savingGeneralCalendar ? "Collegamento…" : "Salva e collega"}
           </button>
@@ -332,7 +332,7 @@ export function CalendarSettings() {
             <button
               onClick={syncGeneralCalendar}
               disabled={syncingGeneralCalendar}
-              className="mt-2 rounded-md border border-green-700 text-green-700 px-3 py-1.5 text-sm font-medium hover:bg-green-50 disabled:opacity-50"
+              className="button button--success mt-2"
             >
               {syncingGeneralCalendar ? "Sincronizzazione…" : "Sincronizza calendario generale"}
             </button>
@@ -346,8 +346,8 @@ export function CalendarSettings() {
       </section>
 
       {/* Flusso 1.3/1.4 — sync */}
-      <section className="rounded-lg bg-white border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-800 mb-2">5. Sincronizzazione docenti</h2>
+      <section className="surface-card surface-card--padded">
+        <h2 className="section-heading mb-2">5. Sincronizzazione docenti</h2>
         <p className="text-sm text-gray-500 mb-3">
           Importa i membri del gruppo, crea i calendari condivisi mancanti e riconcilia gli
           eventi tra database e Google Calendar.
@@ -355,14 +355,14 @@ export function CalendarSettings() {
         <button
           onClick={runSync}
           disabled={syncing || !cfg.masterConnected || !cfg.mainGroupEmail}
-          className="rounded-md bg-green-700 px-4 py-2 text-white text-sm font-medium hover:bg-green-800 disabled:opacity-50"
+          className="button button--success"
         >
           {syncing ? "Sincronizzazione in corso…" : "🔄 Sincronizza / Refresh"}
         </button>
         {syncLogs.length > 0 && (
           <div className="mt-4">
             <h3 className="text-sm font-medium text-gray-700 mb-2">Storico sincronizzazioni</h3>
-            <div className="overflow-x-auto rounded border border-gray-200">
+            <div className="table-shell">
               <table className="min-w-full text-xs">
                 <thead className="bg-gray-50 text-left text-gray-600">
                   <tr>
@@ -458,7 +458,7 @@ export default function AdminSettings() {
       <div
         role="tablist"
         aria-label="Sezioni delle impostazioni"
-        className="flex gap-1 border-b border-gray-200"
+        className="tabs"
       >
         <button
           id="settings-calendar-tab"
@@ -469,11 +469,7 @@ export default function AdminSettings() {
           tabIndex={activeTab === "calendar" ? 0 : -1}
           onClick={() => selectTab("calendar", false)}
           onKeyDown={onTabKeyDown}
-          className={`border-b-2 px-4 py-2 text-sm font-medium ${
-            activeTab === "calendar"
-              ? "border-blue-700 text-blue-700"
-              : "border-transparent text-gray-500 hover:text-gray-800"
-          }`}
+          className={`tab${activeTab === "calendar" ? " tab--active" : ""}`}
         >
           Calendario
         </button>
@@ -486,11 +482,7 @@ export default function AdminSettings() {
           tabIndex={activeTab === "resources" ? 0 : -1}
           onClick={() => selectTab("resources", false)}
           onKeyDown={onTabKeyDown}
-          className={`border-b-2 px-4 py-2 text-sm font-medium ${
-            activeTab === "resources"
-              ? "border-blue-700 text-blue-700"
-              : "border-transparent text-gray-500 hover:text-gray-800"
-          }`}
+          className={`tab${activeTab === "resources" ? " tab--active" : ""}`}
         >
           Risorse condivise
         </button>

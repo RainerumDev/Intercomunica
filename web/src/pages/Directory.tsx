@@ -153,28 +153,28 @@ export default function Directory() {
   };
 
   return (
-    <div className="space-y-8">
-      <h1 className="text-2xl font-bold text-gray-900">Gruppi & Docenti</h1>
-      {error && <p className="rounded bg-red-50 text-red-700 px-3 py-2 text-sm">{error}</p>}
+    <div className="page">
+      <h1 className="page-heading">Gruppi & Docenti</h1>
+      {error && <p role="alert" className="feedback feedback--error">{error}</p>}
 
       {/* Sottogruppi (Flusso 2.1 + Flusso 4) */}
       <section>
-        <div className="flex items-center justify-between mb-3 gap-4">
-          <h2 className="text-lg font-semibold text-gray-800">Sottogruppi</h2>
+        <div className="section-toolbar mb-3">
+          <h2 className="section-heading">Sottogruppi</h2>
           <input
             value={subgroupQ}
             onChange={(e) => setSubgroupQ(e.target.value)}
             placeholder="Cerca sottogruppo…"
-            className="w-72 rounded-md border border-gray-300 px-3 py-2 text-sm"
+            className="form-control w-72"
           />
         </div>
         <div className="space-y-6">
           {Object.entries(groupedSubgroups).sort().map(([folder, list]) => (
             <div key={folder}>
-              <h3 className="text-md font-bold text-gray-700 mb-2 border-b pb-1">{folder}</h3>
+              <h3 className="section-heading mb-2 border-b border-[var(--line)] pb-1">{folder}</h3>
               <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
                 {list.map((s) => (
-                  <div key={s.id} className="flex flex-col justify-between rounded border border-gray-200 bg-white p-2.5 hover:shadow-sm transition-shadow">
+                  <div key={s.id} className="surface-card surface-card--interactive flex flex-col justify-between p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="truncate flex-1">
                         <h4 className="text-sm font-medium text-gray-900 truncate" title={s.name}>{s.name}</h4>
@@ -185,14 +185,14 @@ export default function Directory() {
                           <button
                             onClick={() => setEditingSubgroup(s)}
                             title="Modifica sottogruppo"
-                            className="text-gray-400 hover:text-blue-600"
+                            className="text-action"
                           >
                             <EditIcon />
                           </button>
                           <button
                             onClick={() => deleteSubgroup(s)}
                             title="Elimina sottogruppo"
-                            className="text-gray-400 hover:text-red-600"
+                            className="text-action text-action--danger"
                           >
                             <TrashIcon />
                           </button>
@@ -202,7 +202,7 @@ export default function Directory() {
                     <button
                       onClick={() => setEmailTarget(s)}
                       disabled={s.members.length === 0}
-                      className="mt-2.5 w-full rounded border border-blue-600 text-blue-700 px-2 py-1 text-xs font-medium hover:bg-blue-50 disabled:opacity-40"
+                      className="button button--secondary button--small button--wide mt-2.5"
                     >
                       ✉️ Invia Email
                     </button>
@@ -213,7 +213,7 @@ export default function Directory() {
           ))}
 
           {isAdmin && subgroupQ.trim() === "" && (
-            <div className="rounded border border-dashed border-gray-300 p-3 bg-gray-50/50 mt-6 max-w-xl">
+            <div className="surface-card surface-card--padded mt-6 max-w-xl border-dashed">
               <h4 className="text-sm font-medium text-gray-700 mb-2">Aggiungi nuovo sottogruppo</h4>
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
@@ -221,14 +221,14 @@ export default function Directory() {
                   onChange={(e) => setNewSubgroup(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && newSubgroup.trim() && createSubgroup()}
                   placeholder="Nome (es. 1A)"
-                  className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                  className="form-control flex-1"
                 />
                 <input
                   value={newFolder}
                   onChange={(e) => setNewFolder(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && newSubgroup.trim() && createSubgroup()}
                   placeholder="Cartella (opzionale)"
-                  className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                  className="form-control flex-1"
                   list="folders"
                 />
                 <datalist id="folders">
@@ -239,7 +239,7 @@ export default function Directory() {
                 <button
                   onClick={createSubgroup}
                   disabled={!newSubgroup.trim()}
-                  className="rounded bg-blue-700 px-4 py-1.5 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50 shrink-0"
+                  className="button button--primary shrink-0"
                 >
                   + Crea
                 </button>
@@ -258,16 +258,16 @@ export default function Directory() {
 
       {/* Anagrafica (Flusso 2.2) */}
       <section>
-        <div className="flex items-center justify-between mb-3 gap-4">
-          <h2 className="text-lg font-semibold text-gray-800">Docenti</h2>
+        <div className="section-toolbar mb-3">
+          <h2 className="section-heading">Docenti</h2>
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Cerca per nome, email o sottogruppo…"
-            className="w-72 rounded-md border border-gray-300 px-3 py-2 text-sm"
+            className="form-control w-72"
           />
         </div>
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        <div className="table-shell">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 text-left text-gray-600">
               <tr>
@@ -309,20 +309,20 @@ export default function Directory() {
 
       {editingSubgroup && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => setEditingSubgroup(null)}>
-          <div className="w-full max-w-md rounded-xl bg-white shadow-xl p-6" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Modifica sottogruppo</h2>
+          <div className="dialog-panel" onClick={(e) => e.stopPropagation()}>
+            <h2 className="section-heading mb-4">Modifica sottogruppo</h2>
             <div className="space-y-4">
               <input
                 value={editingSubgroup.name}
                 onChange={(e) => setEditingSubgroup({ ...editingSubgroup, name: e.target.value })}
                 placeholder="Nome *"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="form-control"
               />
               <input
                 value={editingSubgroup.folder || ""}
                 onChange={(e) => setEditingSubgroup({ ...editingSubgroup, folder: e.target.value })}
                 placeholder="Cartella (opzionale)"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="form-control"
                 list="folders"
               />
               
@@ -341,7 +341,7 @@ export default function Directory() {
                   {members.filter(m => !editingSubgroup.members.some(em => em.id === m.id)).map(m => (
                     <div key={m.id} className="flex justify-between items-center py-1">
                       <span className="truncate text-gray-500" title={m.email}>{m.name || m.email}</span>
-                      <button onClick={() => handleModalAddMember(m)} className="text-blue-600 hover:text-blue-800 ml-2 shrink-0">Aggiungi</button>
+                      <button onClick={() => handleModalAddMember(m)} className="text-action ml-2 shrink-0">Aggiungi</button>
                     </div>
                   ))}
                 </div>
@@ -350,14 +350,14 @@ export default function Directory() {
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   onClick={() => setEditingSubgroup(null)}
-                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="button button--neutral"
                 >
                   Annulla
                 </button>
                 <button
                   onClick={() => updateSubgroup(editingSubgroup)}
                   disabled={!editingSubgroup.name.trim()}
-                  className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
+                  className="button button--primary"
                 >
                   Salva
                 </button>

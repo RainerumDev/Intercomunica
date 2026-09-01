@@ -168,16 +168,16 @@ export default function AdminResources() {
   };
 
   if (loading && (!resources || !subgroups)) {
-    return <p role="status" aria-live="polite" className="text-gray-500">Caricamento risorse…</p>;
+    return <p role="status" aria-live="polite" className="portal-status">Caricamento risorse…</p>;
   }
   if (loadError && (!resources || !subgroups)) {
     return (
-      <div className="rounded bg-red-50 p-4 text-sm text-red-700">
+      <div className="feedback feedback--error">
         <p role="alert">{loadError}</p>
         <button
           type="button"
           onClick={() => void loadCollection()}
-          className="mt-3 rounded border border-red-600 px-3 py-1.5 font-medium hover:bg-red-100"
+          className="button button--danger mt-3"
         >
           Riprova
         </button>
@@ -187,11 +187,11 @@ export default function AdminResources() {
   if (!resources || !subgroups) return null;
 
   return (
-    <div className="max-w-4xl space-y-6" aria-busy={mutationsDisabled}>
-      <div className="flex items-center justify-between gap-4">
+    <div className="page" aria-busy={mutationsDisabled}>
+      <div className="page-toolbar">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Risorse condivise</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="page-heading">Risorse condivise</h1>
+          <p className="page-intro mt-1">
             Gestisci i link visibili nella bacheca dei docenti.
           </p>
         </div>
@@ -200,7 +200,7 @@ export default function AdminResources() {
             type="button"
             onClick={openNew}
             disabled={mutationsDisabled}
-            className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50"
+            className="button button--primary"
           >
             Nuova risorsa
           </button>
@@ -208,18 +208,18 @@ export default function AdminResources() {
       </div>
 
       {mutationError && (
-        <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="feedback feedback--error">
           {mutationError}
         </p>
       )}
       {refreshError && (
-        <div className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <div className="feedback feedback--warning">
           <p role="alert">{refreshError}</p>
           <button
             type="button"
             onClick={() => void refreshResourceAudiences()}
             disabled={mutationsDisabled}
-            className="mt-2 rounded border border-amber-700 px-2.5 py-1 font-medium hover:bg-amber-100"
+            className="button button--neutral button--small mt-2"
           >
             Riprova aggiornamento
           </button>
@@ -245,7 +245,7 @@ export default function AdminResources() {
       )}
 
       {resources.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-gray-300 p-10 text-center text-gray-500">
+        <div className="empty-state">
           Nessuna risorsa condivisa. Aggiungi il primo link per iniziare.
         </div>
       ) : (
@@ -264,7 +264,7 @@ export default function AdminResources() {
                     type="button"
                     onClick={() => move(resource.id, "up")}
                     disabled={index === 0 || mutationsDisabled}
-                    className="rounded border border-gray-300 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    className="button button--neutral button--small"
                   >
                     Sposta su
                   </button>
@@ -272,7 +272,7 @@ export default function AdminResources() {
                     type="button"
                     onClick={() => move(resource.id, "down")}
                     disabled={index === resources.length - 1 || mutationsDisabled}
-                    className="rounded border border-gray-300 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    className="button button--neutral button--small"
                   >
                     Sposta giù
                   </button>
@@ -280,7 +280,7 @@ export default function AdminResources() {
                     type="button"
                     onClick={() => openEdit(resource)}
                     disabled={mutationsDisabled}
-                    className="rounded border border-blue-700 px-2.5 py-1.5 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                    className="button button--secondary button--small"
                   >
                     Modifica
                   </button>
@@ -288,7 +288,7 @@ export default function AdminResources() {
                     type="button"
                     onClick={() => remove(resource)}
                     disabled={mutationsDisabled}
-                    className="rounded border border-red-600 px-2.5 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    className="button button--danger button--small"
                   >
                     Elimina
                   </button>

@@ -37,11 +37,11 @@ export default function EmailComposer({ subgroup, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-2xl rounded-xl bg-white shadow-xl p-6"
+        className="dialog-panel max-w-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">
+          <h2 className="section-heading">
             ✉️ Email a «{subgroup.name}»
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">
@@ -51,10 +51,10 @@ export default function EmailComposer({ subgroup, onClose }: Props) {
 
         {result ? (
           <div className="space-y-4">
-            <p className="rounded bg-green-50 text-green-700 px-3 py-2">{result}</p>
+            <p role="status" className="feedback feedback--success">{result}</p>
             <button
               onClick={onClose}
-              className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium"
+              className="button button--primary"
             >
               Chiudi
             </button>
@@ -90,27 +90,27 @@ export default function EmailComposer({ subgroup, onClose }: Props) {
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="Oggetto"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="form-control"
             />
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder="Scrivi il messaggio…"
               rows={8}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="form-control"
             />
-            {error && <p className="rounded bg-red-50 text-red-700 px-3 py-2 text-sm">{error}</p>}
+            {error && <p role="alert" className="feedback feedback--error">{error}</p>}
             <div className="flex justify-end gap-2">
               <button
                 onClick={onClose}
-                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="button button--neutral"
               >
                 Annulla
               </button>
               <button
                 onClick={send}
                 disabled={sending || !subject.trim() || !body.trim() || subgroup.members.length === 0}
-                className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
+                className="button button--primary"
               >
                 {sending ? "Invio…" : "Invia"}
               </button>

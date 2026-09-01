@@ -83,14 +83,14 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
       {member.subgroups.map((s) => (
         <span
           key={s.id}
-          className="inline-flex items-center gap-1 rounded-full bg-blue-100 border border-blue-300 text-blue-800 px-2.5 py-0.5 text-xs font-medium"
+          className="badge badge--brand gap-1"
         >
           {s.name}
           {isAdmin && (
             <button
               onClick={() => onRemove(member, s.id)}
               title={`Rimuovi da ${s.name}`}
-              className="text-blue-500 hover:text-blue-900 leading-none"
+              className="text-action leading-none"
             >
               ×
             </button>
@@ -103,7 +103,7 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
           ref={btnRef}
           onClick={() => setOpen((v) => !v)}
           title="Aggiungi a un sottogruppo"
-          className="inline-flex items-center justify-center h-6 w-6 rounded-full border border-dashed border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 text-sm leading-none"
+          className="text-action inline-flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-[var(--line-strong)] text-sm leading-none"
         >
           +
         </button>
@@ -119,14 +119,14 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
               bottom: pos.bottom !== undefined ? pos.bottom : "auto",
               left: pos.left,
             }}
-            className="z-50 w-64 rounded-lg border border-gray-200 bg-white shadow-lg p-2"
+            className="popover-panel"
           >
             <input
               ref={searchRef}
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Cerca sottogruppo…"
-              className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm mb-2"
+              className="form-control mb-2"
             />
             <div className="max-h-56 overflow-y-auto">
               {available.length === 0 ? (
@@ -143,9 +143,9 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
                       onAdd(member, s.id);
                       setOpen(false);
                     }}
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-blue-50"
+                    className="popover-panel__option"
                   >
-                    <span className="text-blue-600">+</span>
+                    <span className="text-action">+</span>
                     {s.name}
                   </button>
                 ))
