@@ -48,8 +48,8 @@ export default function Bacheca() {
       .catch((e: Error) => setError(e.message));
   }, []);
 
-  if (error) return <p className="text-red-600">{error}</p>;
-  if (!payload) return <p className="text-gray-500">Caricamento bacheca…</p>;
+  if (error) return <p role="alert" className="text-red-600">{error}</p>;
+  if (!payload) return <p role="status" aria-live="polite" className="text-gray-500">Caricamento bacheca…</p>;
 
   const { resources, eventSections } = payload;
 
@@ -58,7 +58,9 @@ export default function Bacheca() {
       <h1 className="text-2xl font-bold text-gray-900">
         Ciao{me?.name ? `, ${me.name.split(" ")[0]}` : ""} 👋
       </h1>
-      <p className="text-gray-500 mb-6">I tuoi prossimi impegni, organizzati per categoria.</p>
+      <p className="text-gray-500 mb-6">
+        Le risorse condivise e i tuoi prossimi impegni, organizzati per categoria.
+      </p>
 
       <section className="mb-8">
         <h2 className="text-lg font-semibold text-gray-800 mb-3">Risorse condivise</h2>
@@ -86,13 +88,13 @@ export default function Bacheca() {
         <div className="space-y-8">
           {eventSections.map((s) => (
             <section key={s.tag}>
-              <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-800 mb-3">
+              <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-800 mb-3">
                 <span
                   className="inline-block h-3 w-3 rounded-full"
                   style={{ backgroundColor: s.color ?? "#1d4ed8" }}
                 />
                 {s.tag}
-              </h2>
+              </h3>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {s.events.map((e) => (
                   <EventCard key={`${s.tag}-${e.id}`} e={e} />

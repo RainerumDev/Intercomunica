@@ -57,7 +57,6 @@ export interface BachecaSection {
     endsAt: string;
     allDay: boolean;
     isGlobal: boolean;
-    bachecaOnly: boolean;
     tags: string[];
   }[];
 }

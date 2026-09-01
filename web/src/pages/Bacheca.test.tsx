@@ -42,7 +42,6 @@ const payloadWithEvents: BachecaPayload = {
           endsAt: "2026-09-10T16:30:00.000Z",
           allDay: false,
           isGlobal: true,
-          bachecaOnly: false,
           tags: ["Collegi"],
         },
       ],
@@ -60,7 +59,6 @@ const payloadWithEvents: BachecaPayload = {
           endsAt: "2026-09-11T16:30:00.000Z",
           allDay: false,
           isGlobal: false,
-          bachecaOnly: false,
           tags: ["Riunioni"],
         },
       ],
@@ -89,10 +87,11 @@ describe("Bacheca", () => {
     const resourceHeading = await screen.findByRole("heading", { name: "Risorse condivise" });
     const eventsHeading = screen.getByRole("heading", { name: "Prossimi eventi" });
     expect(resourceHeading.compareDocumentPosition(eventsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const collegiHeading = screen.getByRole("heading", { name: "Collegi" });
-    const riunioniHeading = screen.getByRole("heading", { name: "Riunioni" });
+    const collegiHeading = screen.getByRole("heading", { name: "Collegi", level: 3 });
+    const riunioniHeading = screen.getByRole("heading", { name: "Riunioni", level: 3 });
     expect(collegiHeading.compareDocumentPosition(riunioniHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Collegio docenti" })).toBeTruthy();
+    expect(screen.getByText("Le risorse condivise e i tuoi prossimi impegni, organizzati per categoria.")).toBeTruthy();
 
     const card = screen.getByRole("article");
     const link = within(card).getByRole("link", { name: /guida condivisa/i });
@@ -134,8 +133,9 @@ describe("Bacheca", () => {
     );
     render(<Bacheca />);
 
-    expect(screen.getByText("Caricamento bacheca…")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("Caricamento bacheca…");
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
     reject(new Error("Bacheca non disponibile"));
-    expect(await screen.findByText("Bacheca non disponibile")).toBeTruthy();
+    expect((await screen.findByRole("alert")).textContent).toContain("Bacheca non disponibile");
   });
 });
