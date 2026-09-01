@@ -190,11 +190,11 @@ export function CalendarSettings() {
             Carica gruppi del dominio
           </button>
         ) : (
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <select
               value={selectedGroup}
               onChange={(e) => setSelectedGroup(e.target.value)}
-              className="form-control flex-1"
+              className="form-control min-w-0 flex-1"
             >
               <option value="">— seleziona gruppo —</option>
               {groups.map((g) => (
@@ -222,7 +222,7 @@ export function CalendarSettings() {
           <p className="text-xs text-gray-400 mb-2">
             In alternativa, inserisci direttamente l'indirizzo del gruppo:
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <input
               type="email"
               value={manualGroup}
@@ -230,7 +230,7 @@ export function CalendarSettings() {
               onKeyDown={(e) => e.key === "Enter" && manualGroup.includes("@") && saveGroup(manualGroup.trim())}
               placeholder="docenti@rainerum.it"
               disabled={!cfg.masterConnected}
-              className="form-control flex-1"
+              className="form-control min-w-0 flex-1"
             />
             <button
               onClick={() => saveGroup(manualGroup.trim())}
@@ -251,7 +251,7 @@ export function CalendarSettings() {
           <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs">{NAME_PLACEHOLDER}</code> per
           inserire il nome del docente nel punto desiderato.
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <input
             ref={nameInputRef}
             value={nameTemplate}
@@ -260,7 +260,7 @@ export function CalendarSettings() {
               setNameSaved(false);
             }}
             placeholder={`Calendario Rainerum 26/27 - ${NAME_PLACEHOLDER}`}
-            className="form-control flex-1 font-mono"
+            className="form-control min-w-0 flex-1 font-mono"
           />
           <button
             onClick={insertPlaceholder}
@@ -307,13 +307,13 @@ export function CalendarSettings() {
         <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="general-calendar-id">
           ID calendario Google
         </label>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <input
             id="general-calendar-id"
             value={generalCalendarId}
             onChange={(event) => setGeneralCalendarId(event.target.value)}
             placeholder={GENERAL_CALENDAR_EXAMPLE}
-            className="form-control flex-1 font-mono"
+            className="form-control min-w-0 flex-1 font-mono"
           />
           <button
             onClick={saveGeneralCalendar}

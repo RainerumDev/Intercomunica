@@ -213,10 +213,6 @@ button {
   padding-block: clamp(1.5rem, 3vw, 2.5rem) 4rem;
 }
 
-.portal-main:focus {
-  outline: none;
-}
-
 .page {
   display: grid;
   gap: 2rem;
@@ -458,7 +454,7 @@ button {
 }
 
 .form-control::placeholder {
-  color: #8a7471;
+  color: #765f5c;
 }
 
 .form-control:hover:not(:disabled) {
@@ -544,7 +540,7 @@ button {
 }
 
 .badge--global {
-  color: var(--warning);
+  color: #7d4f00;
   background: rgb(154 98 0 / 12%);
 }
 
@@ -883,6 +879,19 @@ button {
   .fc .fc-toolbar-chunk {
     display: flex;
     justify-content: center;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .fc .fc-button-group {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 100%;
+  }
+
+  .fc .fc-button-group > .fc-button {
+    flex: 1 1 auto;
   }
 }
 
