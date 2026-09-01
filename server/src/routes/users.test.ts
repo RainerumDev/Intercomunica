@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../db.js", () => ({ prisma: {} }));
+vi.mock("../auth/session.js", () => ({ requireAuth: vi.fn() }));
 
 describe("directory user filtering", () => {
   it("excludes configured accounts from the general teacher list", async () => {
@@ -20,7 +23,7 @@ describe("directory user filtering", () => {
     });
   });
 
-  it("includes folder and color in teacher subgroup tags", async () => {
+  it("preserves subgroup details without exposing legacy calendar state", async () => {
     const usersModule = await import("./users.js");
     const serializeDirectoryUser = (
       usersModule as typeof usersModule & {
@@ -46,8 +49,14 @@ describe("directory user filtering", () => {
       ],
     });
 
-    expect(result.subgroups).toEqual([
-      { id: "group-1a", name: "1A", folder: "Classi", color: "#1A2B3C" },
-    ]);
+    expect(result).toEqual({
+      id: "teacher-1",
+      email: "docente@rainerum.it",
+      name: "Mario Rossi",
+      role: "TEACHER",
+      subgroups: [
+        { id: "group-1a", name: "1A", folder: "Classi", color: "#1A2B3C" },
+      ],
+    });
   });
 });

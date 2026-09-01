@@ -152,6 +152,17 @@ export async function deleteEvent(calendarId: string, googleEventId: string): Pr
   }
 }
 
+/** Delete a whole legacy teacher calendar. Already-absent calendars are complete. */
+export async function deleteCalendar(calendarId: string): Promise<void> {
+  const cal = await calendarApi();
+  try {
+    await withRetry(() => cal.calendars.delete({ calendarId }));
+  } catch (error) {
+    const code = (error as { code?: number }).code;
+    if (code !== 404 && code !== 410) throw error;
+  }
+}
+
 export async function listCalendarChanges(
   calendarId: string,
   options: { syncToken?: string; timeMin?: Date }

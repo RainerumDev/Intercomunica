@@ -36,7 +36,6 @@ export function serializeDirectoryUser(user: DirectoryUser) {
     email: user.email,
     name: user.name,
     role: user.role,
-    hasCalendar: Boolean(user.calendarId),
     subgroups: user.subgroups.map((membership) => ({
       id: membership.subgroup.id,
       name: membership.subgroup.name,

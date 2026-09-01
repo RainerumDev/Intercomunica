@@ -1,16 +1,7 @@
 import { prisma } from "../db.js";
 import { listGroupMembers } from "../google/directory.js";
-import {
-  createTeacherCalendar,
-  renameCalendar,
-  listAppEvents,
-  insertEvent,
-  deleteEvent,
-} from "../google/calendar.js";
-import { eventToCalendarPayload } from "./eventService.js";
-import { renderCalendarName } from "./calendarName.js";
+import { deleteCalendar } from "../google/calendar.js";
 import { isCalendarUsageLimitError } from "../google/retry.js";
-import { usesPersonalCalendar } from "../config.js";
 
 const CALENDAR_MUTATION_DELAY_MS = 750;
 
@@ -22,18 +13,62 @@ export interface SyncResult {
   added: string[];
   deactivated: string[];
   reactivated: string[];
-  calendarsCreated: string[];
-  calendarsRenamed: string[];
-  eventsReinjected: number;
-  orphansRemoved: number;
+  calendarsRemoved: string[];
+  calendarsPending: string[];
   errors: string[];
+}
+
+export interface LegacyCalendarUser {
+  id: string;
+  email: string;
+  calendarId: string;
+}
+
+export interface RetirementDependencies {
+  deleteCalendar: (calendarId: string) => Promise<void>;
+  finalizeUser: (userId: string) => Promise<void>;
+  pause: (milliseconds: number) => Promise<void>;
+  isUsageLimit: (error: unknown) => boolean;
+}
+
+const USAGE_LIMIT_MESSAGE =
+  "Google Calendar ha applicato un limite operativo temporaneo. " +
+  "Sincronizzazione interrotta senza perdere i progressi; attendere alcune ore e riprovare.";
+
+export async function retireLegacyCalendars(
+  users: LegacyCalendarUser[],
+  dependencies: RetirementDependencies
+): Promise<Pick<SyncResult, "calendarsRemoved" | "calendarsPending" | "errors">> {
+  const calendarsRemoved: string[] = [];
+  const calendarsPending: string[] = [];
+  const errors: string[] = [];
+
+  for (const [index, user] of users.entries()) {
+    try {
+      await dependencies.deleteCalendar(user.calendarId);
+      await dependencies.finalizeUser(user.id);
+    } catch (error) {
+      calendarsPending.push(user.email);
+      if (dependencies.isUsageLimit(error)) {
+        calendarsPending.push(...users.slice(index + 1).map((pending) => pending.email));
+        errors.push(USAGE_LIMIT_MESSAGE);
+        break;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`calendario ${user.email}: ${message}`);
+      continue;
+    }
+    calendarsRemoved.push(user.email);
+    await dependencies.pause(CALENDAR_MUTATION_DELAY_MS);
+  }
+
+  return { calendarsRemoved, calendarsPending, errors };
 }
 
 /**
  * Flusso 1.4 — "Sincronizza / Refresh".
  * 1. Align Users with the members of the main Google Group (add new, deactivate removed).
- * 2. Ensure every active member has a dedicated shared calendar.
- * 3. Reconcile events: DB EventInstances vs actual Google events (re-inject missing, delete orphans).
+ * 2. Delete every remaining legacy personal calendar and finalize its local state.
  */
 export async function runFullSync(): Promise<SyncResult> {
   const log = await prisma.syncLog.create({ data: { type: "group-sync" } });
@@ -41,10 +76,8 @@ export async function runFullSync(): Promise<SyncResult> {
     added: [],
     deactivated: [],
     reactivated: [],
-    calendarsCreated: [],
-    calendarsRenamed: [],
-    eventsReinjected: 0,
-    orphansRemoved: 0,
+    calendarsRemoved: [],
+    calendarsPending: [],
     errors: [],
   };
 
@@ -80,45 +113,35 @@ export async function runFullSync(): Promise<SyncResult> {
       }
     }
 
-    // --- 2. calendars for eligible active members (create missing, rename on template change)
-    const active = await prisma.user.findMany({ where: { isActive: true } });
-    for (const u of active) {
-      if (!usesPersonalCalendar(u.email)) continue;
-      const desiredName = renderCalendarName(cfg.calendarNameTemplate, u);
-      let calendarMutated = false;
-      try {
-        if (!u.calendarId) {
-          const calendarId = await createTeacherCalendar(u.email, desiredName);
-          await prisma.user.update({
-            where: { id: u.id },
-            data: { calendarId, calendarName: desiredName },
-          });
-          result.calendarsCreated.push(u.email);
-          calendarMutated = true;
-        } else if (u.calendarName !== desiredName) {
-          await renameCalendar(u.calendarId, desiredName);
-          await prisma.user.update({ where: { id: u.id }, data: { calendarName: desiredName } });
-          result.calendarsRenamed.push(u.email);
-          calendarMutated = true;
-        }
-      } catch (err) {
-        if (isCalendarUsageLimitError(err)) {
-          result.errors.push(
-            "Google Calendar ha applicato un limite operativo temporaneo. " +
-            "Sincronizzazione interrotta senza perdere i progressi; attendere alcune ore e riprovare."
-          );
-          break;
-        }
-        result.errors.push(`calendario ${u.email}: ${(err as Error).message}`);
+    // --- 2. legacy calendar retirement -------------------------------------
+    const legacyUsers = await prisma.user.findMany({
+      where: { calendarId: { not: null } },
+      select: { id: true, email: true, calendarId: true },
+    });
+    const retirement = await retireLegacyCalendars(
+      legacyUsers.map((user) => ({
+        id: user.id,
+        email: user.email,
+        calendarId: user.calendarId as string,
+      })),
+      {
+        deleteCalendar,
+        finalizeUser: async (userId) => {
+          await prisma.$transaction([
+            prisma.eventInstance.deleteMany({ where: { userId } }),
+            prisma.user.update({
+              where: { id: userId },
+              data: { calendarId: null, calendarName: null },
+            }),
+          ]);
+        },
+        pause,
+        isUsageLimit: isCalendarUsageLimitError,
       }
-      if (calendarMutated) await pause(CALENDAR_MUTATION_DELAY_MS);
-    }
-
-    // --- 3. event reconciliation -------------------------------------------
-    const recon = await reconcileEvents();
-    result.eventsReinjected = recon.reinjected;
-    result.orphansRemoved = recon.orphansRemoved;
-    result.errors.push(...recon.errors);
+    );
+    result.calendarsRemoved = retirement.calendarsRemoved;
+    result.calendarsPending = retirement.calendarsPending;
+    result.errors.push(...retirement.errors);
 
     await prisma.syncLog.update({
       where: { id: log.id },
@@ -137,57 +160,4 @@ export async function runFullSync(): Promise<SyncResult> {
     });
     throw err;
   }
-}
-
-/**
- * Verify DB ↔ Google Calendar integrity for every active teacher:
- * - EventInstance without a matching Google event → re-insert it.
- * - App-tagged Google event without a matching EventInstance → delete it.
- */
-export async function reconcileEvents(): Promise<{ reinjected: number; orphansRemoved: number; errors: string[] }> {
-  let reinjected = 0;
-  let orphansRemoved = 0;
-  const errors: string[] = [];
-
-  const users = (await prisma.user.findMany({
-    where: { isActive: true, calendarId: { not: null } },
-    include: {
-      eventInstances: {
-        include: { event: { include: { tags: { include: { tag: true } }, subgroups: true } } },
-      },
-    },
-  })).filter((user) => usesPersonalCalendar(user.email));
-
-  for (const u of users) {
-    const calendarId = u.calendarId as string;
-    try {
-      const googleEvents = await listAppEvents(calendarId);
-      const googleById = new Map(googleEvents.map((g) => [g.googleEventId, g]));
-      const instanceByGoogleId = new Map(u.eventInstances.map((i) => [i.googleEventId, i]));
-
-      // re-inject missing
-      for (const inst of u.eventInstances) {
-        if (!googleById.has(inst.googleEventId)) {
-          const payload = eventToCalendarPayload(inst.event);
-          const newGoogleId = await insertEvent(calendarId, payload);
-          await prisma.eventInstance.update({
-            where: { id: inst.id },
-            data: { googleEventId: newGoogleId, calendarId },
-          });
-          reinjected++;
-        }
-      }
-      // remove orphans
-      for (const g of googleEvents) {
-        if (!instanceByGoogleId.has(g.googleEventId)) {
-          await deleteEvent(calendarId, g.googleEventId);
-          orphansRemoved++;
-        }
-      }
-    } catch (err) {
-      errors.push(`riconciliazione ${u.email}: ${(err as Error).message}`);
-    }
-  }
-
-  return { reinjected, orphansRemoved, errors };
 }

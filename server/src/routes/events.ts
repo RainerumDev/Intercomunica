@@ -40,7 +40,6 @@ function serialize(e: {
   bachecaOnly: boolean;
   tags: { tag: { id: string; name: string; color: string | null } }[];
   subgroups: { subgroupId: string }[];
-  _count?: { instances: number };
 }) {
   return {
     id: e.id,
@@ -54,14 +53,12 @@ function serialize(e: {
     bachecaOnly: e.bachecaOnly,
     tags: e.tags.map((t) => ({ id: t.tag.id, name: t.tag.name, color: t.tag.color })),
     subgroupIds: e.subgroups.map((s) => s.subgroupId),
-    instanceCount: e._count?.instances,
   };
 }
 
 const includeRelations = {
   tags: { include: { tag: true } },
   subgroups: true,
-  _count: { select: { instances: true } },
 } as const;
 
 /** Admin calendar view: events in a date range (?from=&to=). */

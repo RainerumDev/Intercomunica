@@ -7,7 +7,6 @@ import { masterAuthUrl, exchangeCode, verifyState, MASTER_CALLBACK_PATH } from "
 import { listGroups } from "../google/directory.js";
 import { requireAdmin } from "../auth/session.js";
 import { runFullSync } from "../services/syncService.js";
-import { DEFAULT_CALENDAR_TEMPLATE } from "../services/calendarName.js";
 import {
   configureGeneralCalendar,
   ensureGeneralCalendarWatch,
@@ -27,7 +26,6 @@ adminRouter.get(
       masterConnected: Boolean(cfg?.masterRefreshTokenEnc),
       masterEmail: cfg?.masterEmail ?? null,
       mainGroupEmail: cfg?.mainGroupEmail ?? null,
-      calendarNameTemplate: cfg?.calendarNameTemplate ?? DEFAULT_CALENDAR_TEMPLATE,
       generalCalendarId: cfg?.generalCalendarId ?? null,
       generalCalendarLastSyncAt: cfg?.generalCalendarLastSyncAt ?? null,
       generalCalendarLastError: cfg?.generalCalendarLastError ?? null,
@@ -117,29 +115,6 @@ adminRouter.post(
       where: { id: 1 },
       create: { id: 1, mainGroupEmail: body.groupEmail.toLowerCase() },
       update: { mainGroupEmail: body.groupEmail.toLowerCase() },
-    });
-    res.json({ ok: true });
-  })
-);
-
-const calendarNameSchema = z.object({
-  template: z.string().trim().min(1).max(200),
-});
-
-/**
- * Save the calendar-name template (placeholders: {nome}, {email}).
- * Applied at next sync: new calendars use it, existing ones get renamed.
- */
-adminRouter.post(
-  "/calendar-name",
-  requireAdmin,
-  h(async (req, res) => {
-    const body = parseBody(calendarNameSchema, req, res);
-    if (!body) return;
-    await prisma.appConfig.upsert({
-      where: { id: 1 },
-      create: { id: 1, calendarNameTemplate: body.template },
-      update: { calendarNameTemplate: body.template },
     });
     res.json({ ok: true });
   })
