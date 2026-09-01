@@ -1,5 +1,5 @@
 import { calendarApi } from "./master.js";
-import { withRetry } from "./retry.js";
+import { googleErrorStatus, withRetry } from "./retry.js";
 import type { calendar_v3 } from "googleapis";
 
 export const EXT_PROP_APP = "intercomunica"; // marker: event managed by this app
@@ -158,8 +158,8 @@ export async function deleteCalendar(calendarId: string): Promise<void> {
   try {
     await withRetry(() => cal.calendars.delete({ calendarId }));
   } catch (error) {
-    const code = (error as { code?: number }).code;
-    if (code !== 404 && code !== 410) throw error;
+    const status = googleErrorStatus(error);
+    if (status !== 404 && status !== 410) throw error;
   }
 }
 

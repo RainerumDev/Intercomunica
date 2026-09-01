@@ -12,6 +12,9 @@ vi.mock("./master.js", () => ({
   })),
 }));
 
+vi.mock("../db.js", () => ({ prisma: {} }));
+vi.mock("./directory.js", () => ({ listGroupMembers: vi.fn() }));
+
 const base: CalendarEventPayload = {
   title: "Collegio Docenti",
   description: "Ordine del giorno in allegato",
@@ -28,6 +31,16 @@ beforeEach(() => {
   google.deleteCalendar.mockReset();
 });
 
+function gaxiosError(status: number) {
+  return Object.assign(new Error("gone"), {
+    status,
+    response: {
+      status,
+      data: { error: { code: status, message: "gone", errors: [] } },
+    },
+  });
+}
+
 describe("deleteCalendar", () => {
   it("deletes the whole legacy calendar", async () => {
     google.deleteCalendar.mockResolvedValue({ data: {} });
@@ -41,15 +54,32 @@ describe("deleteCalendar", () => {
     });
   });
 
-  it.each([404, 410])("treats an already absent calendar (%s) as deleted", async (code) => {
-    google.deleteCalendar.mockRejectedValue(Object.assign(new Error("gone"), { code }));
+  it.each([404, 410])("treats a Gaxios %s as deleted and finalizes local state", async (status) => {
+    google.deleteCalendar.mockRejectedValue(gaxiosError(status));
     const { deleteCalendar } = await import("./calendar.js");
+    const { retireLegacyCalendars } = await import("../services/syncService.js");
+    const finalizeUser = vi.fn().mockResolvedValue(undefined);
 
-    await expect(deleteCalendar("legacy@rainerum.it")).resolves.toBeUndefined();
+    const result = await retireLegacyCalendars(
+      [{ id: "user-1", email: "legacy@rainerum.it", calendarId: "legacy-calendar" }],
+      {
+        deleteCalendar,
+        finalizeUser,
+        pause: vi.fn().mockResolvedValue(undefined),
+        isUsageLimit: vi.fn().mockReturnValue(false),
+      }
+    );
+
+    expect(result).toEqual({
+      calendarsRemoved: ["legacy@rainerum.it"],
+      calendarsPending: [],
+      errors: [],
+    });
+    expect(finalizeUser).toHaveBeenCalledWith("user-1");
   });
 
   it("preserves unexpected Google deletion failures", async () => {
-    const failure = Object.assign(new Error("forbidden"), { code: 403 });
+    const failure = gaxiosError(403);
     google.deleteCalendar.mockRejectedValue(failure);
     const { deleteCalendar } = await import("./calendar.js");
 

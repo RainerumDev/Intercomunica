@@ -31,6 +31,10 @@ function googleErrorDetails(err: unknown): { status?: number; reason?: string } 
   return { status, reason };
 }
 
+export function googleErrorStatus(err: unknown): number | undefined {
+  return googleErrorDetails(err).status;
+}
+
 export function isCalendarUsageLimitError(err: unknown): boolean {
   const { status, reason } = googleErrorDetails(err);
   if (status === 429) return true;
