@@ -6,8 +6,53 @@ import EmailComposer from "../components/EmailComposer";
 import MemberSubgroupCell from "../components/MemberSubgroupCell";
 import SubgroupChip from "../components/SubgroupChip";
 import SubgroupDetailsModal from "../components/SubgroupDetailsModal";
-import { normalizeColorOverride, sortMembers, sortSubgroups } from "../subgroups";
+import { buildDirectorySections, normalizeColorOverride, sortMembers, sortSubgroups } from "../subgroups";
 import { useDialogFocus } from "../components/useDialogFocus";
+
+interface TeacherTableProps {
+  label: string;
+  members: Member[];
+  subgroups: Subgroup[];
+  isAdmin: boolean;
+  onAdd: (member: Member, subgroupId: string) => void;
+  onRemove: (member: Member, subgroupId: string) => void;
+  onInspect: (subgroupId: string) => void;
+}
+
+function TeacherTable({ label, members, subgroups, isAdmin, onAdd, onRemove, onInspect }: TeacherTableProps) {
+  return (
+    <div className="table-shell directory-table-shell">
+      <table className="directory-table min-w-full text-sm" aria-label={label}>
+        <thead className="text-left">
+          <tr>
+            <th className="px-4 py-3 font-medium">Docente</th>
+            <th className="px-4 py-3 font-medium">Sottogruppi</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {members.map((member) => (
+            <tr key={member.id}>
+              <td className="px-4 py-3 whitespace-nowrap">
+                <div className="font-medium text-gray-900">{member.name?.trim() || "—"}</div>
+                <div className="text-gray-500">{member.email}</div>
+              </td>
+              <td className="px-4 py-3">
+                <MemberSubgroupCell
+                  member={member}
+                  allSubgroups={subgroups}
+                  isAdmin={isAdmin}
+                  onAdd={onAdd}
+                  onRemove={onRemove}
+                  onInspect={onInspect}
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export default function Directory() {
   const { me } = useAuth();
@@ -22,6 +67,7 @@ export default function Directory() {
   const [newFolder, setNewFolder] = useState("");
   const [editingSubgroup, setEditingSubgroup] = useState<Subgroup | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const directoryTitleId = useId();
   const editDialogTitleId = useId();
   const editDialogRef = useDialogFocus({
     active: Boolean(editingSubgroup),
@@ -79,6 +125,16 @@ export default function Directory() {
     });
     return groups;
   }, [filteredSubgroups]);
+
+  const directorySections = useMemo(
+    () => buildDirectorySections(filtered, subgroups),
+    [filtered, subgroups]
+  );
+
+  const inspectSubgroup = (subgroupId: string) => {
+    const subgroup = subgroups.find((entry) => entry.id === subgroupId);
+    if (subgroup) setSelectedSubgroup(subgroup);
+  };
 
   const addMembership = async (member: Member, subgroupId: string) => {
     setError(null);
@@ -286,9 +342,9 @@ export default function Directory() {
       </section>
 
       {/* Anagrafica (Flusso 2.2) */}
-      <section>
+      <section aria-labelledby={directoryTitleId}>
         <div className="section-toolbar mb-3">
-          <h2 className="section-heading">Docenti</h2>
+          <h2 id={directoryTitleId} className="section-heading">Docenti</h2>
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -296,46 +352,62 @@ export default function Directory() {
             className="form-control w-72"
           />
         </div>
-        <div className="table-shell">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50 text-left text-gray-600">
-              <tr>
-                <th className="px-4 py-3 font-medium">Docente</th>
-                <th className="px-4 py-3 font-medium">Sottogruppi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filtered.map((m) => (
-                <tr key={m.id}>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <div className="font-medium text-gray-900">{m.name ?? "—"}</div>
-                    <div className="text-gray-500">{m.email}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <MemberSubgroupCell
-                      member={m}
-                      allSubgroups={subgroups}
+        {filtered.length === 0 ? (
+          <p className="surface-card field-hint directory-empty">
+            Nessun docente trovato. {members.length === 0 && "Esegui la sincronizzazione dalle Impostazioni."}
+          </p>
+        ) : (
+          <div className="directory-sections">
+            {directorySections.map((section, sectionIndex) => {
+              const sectionTitleId = `${directoryTitleId}-section-${sectionIndex}`;
+              if (section.kind === "ungrouped") {
+                return (
+                  <section
+                    key="ungrouped"
+                    aria-labelledby={sectionTitleId}
+                    className="directory-folder directory-folder--ungrouped"
+                  >
+                    <h3 id={sectionTitleId} className="directory-folder__heading">{section.label}</h3>
+                    <TeacherTable
+                      label="Docenti senza sottogruppo"
+                      members={section.members}
+                      subgroups={subgroups}
                       isAdmin={isAdmin}
                       onAdd={addMembership}
                       onRemove={removeMembership}
-                      onInspect={(subgroupId) => {
-                        const subgroup = subgroups.find((entry) => entry.id === subgroupId);
-                        if (subgroup) setSelectedSubgroup(subgroup);
-                      }}
+                      onInspect={inspectSubgroup}
                     />
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={2} className="field-hint px-4 py-8 text-center">
-                    Nessun docente trovato. {members.length === 0 && "Esegui la sincronizzazione dalle Impostazioni."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                  </section>
+                );
+              }
+
+              return (
+                <section key={section.label} aria-labelledby={sectionTitleId} className="directory-folder">
+                  <h3 id={sectionTitleId} className="directory-folder__heading">{section.label}</h3>
+                  <div className="directory-groups">
+                    {section.groups.map(({ subgroup, members: subgroupMembers }, groupIndex) => {
+                      const subgroupTitleId = `${sectionTitleId}-group-${groupIndex}`;
+                      return (
+                        <section key={subgroup.id} aria-labelledby={subgroupTitleId} className="directory-group">
+                          <h4 id={subgroupTitleId} className="directory-group__heading">{subgroup.name}</h4>
+                          <TeacherTable
+                            label={`Docenti di ${subgroup.name}`}
+                            members={subgroupMembers}
+                            subgroups={subgroups}
+                            isAdmin={isAdmin}
+                            onAdd={addMembership}
+                            onRemove={removeMembership}
+                            onInspect={inspectSubgroup}
+                          />
+                        </section>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {selectedSubgroup && (

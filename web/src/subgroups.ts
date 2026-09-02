@@ -10,6 +10,23 @@ export interface MemberRef {
   email: string;
 }
 
+export interface DirectoryMemberRef extends MemberRef {
+  id: string;
+  subgroups: readonly Pick<SubgroupRef, "id">[];
+}
+
+export interface DirectoryGroup<TSubgroup extends SubgroupRef, TMember extends DirectoryMemberRef> {
+  subgroup: TSubgroup;
+  members: TMember[];
+}
+
+export type DirectorySection<
+  TSubgroup extends SubgroupRef,
+  TMember extends DirectoryMemberRef,
+> =
+  | { kind: "folder"; label: string; groups: DirectoryGroup<TSubgroup, TMember>[] }
+  | { kind: "ungrouped"; label: "Senza sottogruppo"; members: TMember[] };
+
 const DARK_INK = "#172033";
 const WHITE = "#FFFFFF";
 const BLACK = "#000000";
@@ -119,6 +136,38 @@ export function sortMembers<T extends MemberRef>(values: readonly T[]): T[] {
     const label = italian.compare(firstLabel, secondLabel);
     return label !== 0 ? label : italian.compare(first.email, second.email);
   });
+}
+
+export function buildDirectorySections<
+  TMember extends DirectoryMemberRef,
+  TSubgroup extends SubgroupRef,
+>(members: readonly TMember[], subgroups: readonly TSubgroup[]): DirectorySection<TSubgroup, TMember>[] {
+  const sections: DirectorySection<TSubgroup, TMember>[] = [];
+  const matchedMemberIds = new Set<string>();
+
+  for (const subgroup of sortSubgroups(subgroups)) {
+    const subgroupMembers = sortMembers(
+      members.filter((member) => member.subgroups.some((membership) => membership.id === subgroup.id))
+    );
+    if (subgroupMembers.length === 0) continue;
+
+    subgroupMembers.forEach((member) => matchedMemberIds.add(member.id));
+    const label = subgroup.folder?.trim() || "Generale";
+    const existing = sections.find(
+      (section) => section.kind === "folder" && italian.compare(section.label, label) === 0
+    );
+    const group = { subgroup, members: subgroupMembers };
+
+    if (existing?.kind === "folder") existing.groups.push(group);
+    else sections.push({ kind: "folder", label, groups: [group] });
+  }
+
+  const ungrouped = sortMembers(members.filter((member) => !matchedMemberIds.has(member.id)));
+  if (ungrouped.length > 0) {
+    sections.push({ kind: "ungrouped", label: "Senza sottogruppo", members: ungrouped });
+  }
+
+  return sections;
 }
 
 export function normalizeColorOverride(value: string | null): string | null {

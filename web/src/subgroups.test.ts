@@ -10,6 +10,25 @@ async function subject() {
       values: readonly T[]
     ) => T[];
     sortMembers: <T extends { name?: string | null; email: string }>(values: readonly T[]) => T[];
+    buildDirectorySections: <
+      TMember extends {
+        id: string;
+        name?: string | null;
+        email: string;
+        subgroups: readonly { id: string }[];
+      },
+      TSubgroup extends { id: string; name: string; folder?: string | null },
+    >(
+      members: readonly TMember[],
+      subgroups: readonly TSubgroup[]
+    ) => Array<
+      | {
+          kind: "folder";
+          label: string;
+          groups: Array<{ subgroup: TSubgroup; members: TMember[] }>;
+        }
+      | { kind: "ungrouped"; label: "Senza sottogruppo"; members: TMember[] }
+    >;
     normalizeColorOverride: (value: string | null) => string | null;
   };
 }
@@ -60,6 +79,29 @@ describe("subgroup presentation", () => {
     expect(input).toEqual(original);
   });
 
+  it("uses trimmed Italian folder and subgroup collation with numeric labels", async () => {
+    const { sortSubgroups } = await subject();
+    const input = [
+      { id: "general-2", name: "Area 2", folder: "  " },
+      { id: "class-10", name: "Classe 10", folder: " Classi " },
+      { id: "department-f", name: "Fisica", folder: "Dipartimenti" },
+      { id: "class-2", name: "Classe 2", folder: "Classi" },
+      { id: "department-e", name: "Ètica", folder: "Dipartimenti" },
+      { id: "general-1", name: "Area 1", folder: null },
+    ];
+    const original = structuredClone(input);
+
+    expect(sortSubgroups(input).map((entry) => entry.id)).toEqual([
+      "class-2",
+      "class-10",
+      "department-e",
+      "department-f",
+      "general-1",
+      "general-2",
+    ]);
+    expect(input).toEqual(original);
+  });
+
   it("sorts copied members by display name and then email", async () => {
     const { sortMembers } = await subject();
     const input = [
@@ -75,6 +117,107 @@ describe("subgroup presentation", () => {
       "zeta@rainerum.it",
     ]);
     expect(input).toEqual(original);
+  });
+
+  it("uses email for blank names and resolves accented, numeric, and display-name ties", async () => {
+    const { sortMembers } = await subject();
+    const input = [
+      { name: "Docente 10", email: "dieci@rainerum.it" },
+      { name: "Élia", email: "zeta@rainerum.it" },
+      { name: "Elia", email: "alfa@rainerum.it" },
+      { name: "  ", email: "anna@rainerum.it" },
+      { name: "Docente 2", email: "due@rainerum.it" },
+    ];
+    const original = structuredClone(input);
+
+    expect(sortMembers(input).map((entry) => entry.email)).toEqual([
+      "anna@rainerum.it",
+      "due@rainerum.it",
+      "dieci@rainerum.it",
+      "alfa@rainerum.it",
+      "zeta@rainerum.it",
+    ]);
+    expect(input).toEqual(original);
+  });
+
+  it("projects immutable folder sections, repeats multi-members, and appends unmatched members", async () => {
+    const { buildDirectorySections } = await subject();
+    const members = [
+      {
+        id: "m-zeta",
+        name: "Zeta",
+        email: "zeta@rainerum.it",
+        subgroups: [{ id: "class-10" }, { id: "class-2" }, { id: "class-2" }],
+      },
+      {
+        id: "m-mail",
+        name: " ",
+        email: "anna@rainerum.it",
+        subgroups: [{ id: "class-2" }],
+      },
+      {
+        id: "m-beta",
+        name: "Beta",
+        email: "beta@rainerum.it",
+        subgroups: [{ id: "class-2" }],
+      },
+      {
+        id: "m-none",
+        name: "Carlo",
+        email: "carlo@rainerum.it",
+        subgroups: [],
+      },
+      {
+        id: "m-stale",
+        name: "Dario",
+        email: "dario@rainerum.it",
+        subgroups: [{ id: "missing" }],
+      },
+    ] as const;
+    const subgroups = [
+      { id: "class-10", name: "Classe 10", folder: "Classi" },
+      { id: "empty", name: "Vuoto", folder: "Dipartimenti" },
+      { id: "class-2", name: "Classe 2", folder: " Classi " },
+    ] as const;
+    const originalMembers = structuredClone(members);
+    const originalSubgroups = structuredClone(subgroups);
+
+    const sections = buildDirectorySections(members, subgroups);
+
+    expect(
+      sections.map((section) =>
+        section.kind === "folder"
+          ? {
+              kind: section.kind,
+              label: section.label,
+              groups: section.groups.map((group) => ({
+                subgroup: group.subgroup.id,
+                members: group.members.map((member) => member.id),
+              })),
+            }
+          : {
+              kind: section.kind,
+              label: section.label,
+              members: section.members.map((member) => member.id),
+            }
+      )
+    ).toEqual([
+      {
+        kind: "folder",
+        label: "Classi",
+        groups: [
+          { subgroup: "class-2", members: ["m-mail", "m-beta", "m-zeta"] },
+          { subgroup: "class-10", members: ["m-zeta"] },
+        ],
+      },
+      {
+        kind: "ungrouped",
+        label: "Senza sottogruppo",
+        members: ["m-none", "m-stale"],
+      },
+    ]);
+    expect(members).toEqual(originalMembers);
+    expect(subgroups).toEqual(originalSubgroups);
   });
 
   it("normalizes manual color overrides and preserves automatic mode", async () => {

@@ -751,6 +751,56 @@ button {
   background: var(--surface-soft);
 }
 
+.directory-sections,
+.directory-groups {
+  display: grid;
+}
+
+.directory-sections {
+  gap: 2rem;
+}
+
+.directory-groups {
+  gap: 1rem;
+}
+
+.directory-folder__heading {
+  margin: 0 0 0.8rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 750;
+}
+
+.directory-folder--ungrouped {
+  margin-top: 0.25rem;
+}
+
+.directory-group__heading {
+  margin: 0 0 0.45rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 750;
+}
+
+.directory-table-shell {
+  box-shadow: none;
+}
+
+.directory-table {
+  table-layout: fixed;
+}
+
+.directory-table th:first-child {
+  width: min(40%, 22rem);
+}
+
+.directory-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
 .dialog-panel {
   width: min(100%, 30rem);
   max-height: calc(100vh - 2rem);
@@ -857,6 +907,18 @@ button {
 
   .card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .directory-sections {
+    gap: 1.5rem;
+  }
+
+  .directory-table {
+    min-width: 38rem;
+  }
+
+  .directory-table th:first-child {
+    width: 15rem;
   }
 
   .page-toolbar,
