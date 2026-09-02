@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { CalendarResources } from "../components/CalendarResources";
-import type { BachecaSection, CalendarLinks } from "../types";
+import ResourceCard from "../components/ResourceCard";
+import type { BachecaPayload, BachecaSection, CalendarLinks } from "../types";
 
 const unavailableCalendarLinks: CalendarLinks = {
   generalGoogleUrl: null,
@@ -24,21 +25,19 @@ const dayFmt = new Intl.DateTimeFormat("it-IT", { weekday: "short", day: "numeri
 function EventCard({ e }: { e: BachecaSection["events"][number] }) {
   const start = new Date(e.startsAt);
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+    <div className="event-card surface-card surface-card--interactive">
       <div className="flex items-start justify-between gap-2">
-        <h3 className="font-semibold text-gray-900">{e.title}</h3>
+        <h3 className="resource-card__title">{e.title}</h3>
         {e.isGlobal && (
-          <span className="shrink-0 rounded-full bg-amber-100 text-amber-800 text-xs px-2 py-0.5">
-            Per tutti
-          </span>
+          <span className="badge badge--global">Per tutti</span>
         )}
       </div>
-      <p className="text-sm text-blue-700 mt-1">
+      <p className="event-card__date">
         {e.allDay ? dayFmt.format(start) : dateFmt.format(start)}
       </p>
-      {e.location && <p className="text-sm text-gray-500 mt-1">📍 {e.location}</p>}
+      {e.location && <p className="event-card__meta mt-1">📍 {e.location}</p>}
       {e.description && (
-        <p className="text-sm text-gray-600 mt-2 line-clamp-3">{e.description}</p>
+        <p className="event-card__description mt-2 line-clamp-3">{e.description}</p>
       )}
     </div>
   );
@@ -46,15 +45,15 @@ function EventCard({ e }: { e: BachecaSection["events"][number] }) {
 
 export default function Bacheca() {
   const { me } = useAuth();
-  const [sections, setSections] = useState<BachecaSection[] | null>(null);
+  const [payload, setPayload] = useState<BachecaPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [calendarLinks, setCalendarLinks] = useState<CalendarLinks | null>(null);
   const [calendarLinksError, setCalendarLinksError] = useState<string | null>(null);
 
   useEffect(() => {
     api
-      .get<BachecaSection[]>("/api/bacheca")
-      .then(setSections)
+      .get<BachecaPayload>("/api/bacheca")
+      .then(setPayload)
       .catch((e: Error) => setError(e.message));
 
     api
@@ -70,11 +69,15 @@ export default function Bacheca() {
   };
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900">
-        Ciao{me?.name ? `, ${me.name.split(" ")[0]}` : ""} 👋
-      </h1>
-      <p className="text-gray-500 mb-6">I tuoi prossimi impegni, organizzati per categoria.</p>
+    <div className="page">
+      <div className="page-heading-group">
+        <h1 className="page-heading">
+          Ciao{me?.name ? `, ${me.name.split(" ")[0]}` : ""} 👋
+        </h1>
+        <p className="page-intro">
+          Le risorse condivise e i tuoi prossimi impegni, organizzati per categoria.
+        </p>
+      </div>
 
       <CalendarResources
         links={calendarLinks ?? unavailableCalendarLinks}
@@ -89,32 +92,54 @@ export default function Bacheca() {
       />
 
       {error ? (
-        <p className="text-red-600">{error}</p>
-      ) : !sections ? (
-        <p className="text-gray-500">Caricamento bacheca…</p>
-      ) : sections.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-gray-300 p-10 text-center text-gray-500">
-          Nessun impegno in programma. Goditi la calma! 🌿
-        </div>
+        <p role="alert" className="feedback feedback--error">{error}</p>
+      ) : !payload ? (
+        <p role="status" aria-live="polite" className="portal-status">Caricamento bacheca…</p>
       ) : (
-        <div className="space-y-8">
-          {sections.map((s) => (
-            <section key={s.tag}>
-              <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-800 mb-3">
-                <span
-                  className="inline-block h-3 w-3 rounded-full"
-                  style={{ backgroundColor: s.color ?? "#1d4ed8" }}
-                />
-                {s.tag}
-              </h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {s.events.map((e) => (
-                  <EventCard key={`${s.tag}-${e.id}`} e={e} />
+        <>
+          <section className="section-block">
+            <h2 className="section-heading">Risorse condivise</h2>
+            {payload.resources.length === 0 ? (
+              <div className="empty-state">
+                Nessuna risorsa condivisa disponibile.
+              </div>
+            ) : (
+              <div className="card-grid">
+                {payload.resources.map((resource) => (
+                  <ResourceCard key={resource.id} resource={resource} />
                 ))}
               </div>
-            </section>
-          ))}
-        </div>
+            )}
+          </section>
+
+          <section className="section-block">
+            <h2 className="section-heading">Prossimi eventi</h2>
+            {payload.eventSections.length === 0 && (
+              <div className="empty-state">
+                Nessun impegno in programma. Goditi la calma! 🌿
+              </div>
+            )}
+
+            <div className="space-y-8">
+              {payload.eventSections.map((s) => (
+                <section key={s.tag}>
+                  <h3 className="section-heading flex items-center gap-2 mb-3">
+                    <span
+                      className="inline-block h-3 w-3 rounded-full"
+                      style={{ backgroundColor: s.color ?? "#1d4ed8" }}
+                    />
+                    {s.tag}
+                  </h3>
+                  <div className="card-grid">
+                    {s.events.map((e) => (
+                      <EventCard key={`${s.tag}-${e.id}`} e={e} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </section>
+        </>
       )}
     </div>
   );

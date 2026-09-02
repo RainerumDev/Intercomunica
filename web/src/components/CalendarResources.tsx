@@ -101,25 +101,25 @@ export function CalendarResources({ links, onRotate, statusMessage }: CalendarRe
   );
 
   return (
-    <section aria-labelledby="calendar-resources-title" className="mb-8">
-      <h2 id="calendar-resources-title" className="text-lg font-semibold text-gray-800 mb-3">
+    <section aria-labelledby="calendar-resources-title" className="section-block">
+      <h2 id="calendar-resources-title" className="section-heading">
         Calendari
       </h2>
       {statusMessage && (
-        <p role="status" className="mb-3 text-sm text-gray-600">
+        <p role="status" className="portal-status">
           {statusMessage}
         </p>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-          <h3 className="font-semibold text-gray-900">Calendario generale</h3>
-          <p className="mt-1 text-sm text-gray-500">Tutti gli appuntamenti condivisi dalla scuola.</p>
+        <div className="surface-card surface-card--padded">
+          <h3 className="section-heading">Calendario generale</h3>
+          <p className="field-hint mt-1">Tutti gli appuntamenti condivisi dalla scuola.</p>
           {links.generalGoogleUrl ? (
             <a
               href={links.generalGoogleUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-4 inline-block rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800"
+              className="button button--primary mt-4"
             >
               Collega calendario generale
             </a>
@@ -128,29 +128,29 @@ export function CalendarResources({ links, onRotate, statusMessage }: CalendarRe
               <button
                 type="button"
                 disabled
-                className="mt-4 rounded-md bg-gray-200 px-4 py-2 text-sm font-medium text-gray-500"
+                className="button button--primary mt-4"
               >
                 Collega calendario generale
               </button>
-              <p className="mt-2 text-sm text-gray-500">Calendario generale non configurato.</p>
+              <p className="field-hint mt-2">Calendario generale non configurato.</p>
             </>
           )}
         </div>
 
-        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-          <h3 className="font-semibold text-gray-900">Il mio calendario</h3>
-          <p className="mt-1 text-sm text-gray-500">Solo gli appuntamenti che ti riguardano.</p>
+        <div className="surface-card surface-card--padded">
+          <h3 className="section-heading">Il mio calendario</h3>
+          <p className="field-hint mt-1">Solo gli appuntamenti che ti riguardano.</p>
           <button
             type="button"
             ref={personalTriggerRef}
             onClick={openPersonalDialog}
             disabled={!personalAvailable}
-            className="mt-4 rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:bg-gray-200 disabled:text-gray-500"
+            className="button button--primary mt-4"
           >
             Collega il mio calendario
           </button>
           {!personalAvailable && (
-            <p className="mt-2 text-sm text-gray-500">Il tuo calendario personale non è disponibile.</p>
+            <p className="field-hint mt-2">Il tuo calendario personale non è disponibile.</p>
           )}
         </div>
       </div>
@@ -165,23 +165,23 @@ export function CalendarResources({ links, onRotate, statusMessage }: CalendarRe
             role="dialog"
             aria-modal="true"
             aria-labelledby="personal-calendar-title"
-            className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl"
+            className="dialog-panel"
             onClick={(event) => event.stopPropagation()}
             onKeyDown={trapDialogFocus}
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 id="personal-calendar-title" className="text-lg font-semibold text-gray-900">
+                <h2 id="personal-calendar-title" className="section-heading">
                   Collega il mio calendario
                 </h2>
-                <p className="mt-1 text-sm text-gray-500">Questo collegamento resta aggiornato con gli eventi di Intercomunica.</p>
+                <p className="field-hint mt-1">Questo collegamento resta aggiornato con gli eventi di Intercomunica.</p>
               </div>
               <button
                 type="button"
                 ref={closeButtonRef}
                 onClick={closePersonalDialog}
                 aria-label="Chiudi"
-                className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="text-action text-xl"
               >
                 ✕
               </button>
@@ -190,7 +190,7 @@ export function CalendarResources({ links, onRotate, statusMessage }: CalendarRe
             <div className="mt-5 space-y-3">
               <a
                 href={links.personalWebcalUrl!}
-                className="inline-block rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800"
+                className="button button--primary"
               >
                 Apri nell'app Calendario
               </a>
@@ -198,7 +198,7 @@ export function CalendarResources({ links, onRotate, statusMessage }: CalendarRe
                 <button
                   type="button"
                   onClick={copyHttpsUrl}
-                  className="rounded-md border border-blue-700 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+                  className="button button--secondary"
                 >
                   Copia indirizzo HTTPS
                 </button>
@@ -222,7 +222,7 @@ export function CalendarResources({ links, onRotate, statusMessage }: CalendarRe
                   type="button"
                   onClick={rotateLink}
                   disabled={rotating}
-                  className="rounded-md border border-red-700 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  className="button button--danger"
                 >
                   {rotating ? "Rigenerazione…" : "Rigenera collegamento"}
                 </button>

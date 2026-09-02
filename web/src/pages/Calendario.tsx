@@ -98,14 +98,15 @@ export default function Calendario() {
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">Calendario</h1>
-        <div className="flex items-center gap-4">
+    <div className="page">
+      <div className="page-toolbar">
+        <h1 className="page-heading">Calendario</h1>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <select
             value={filterSubgroupId}
             onChange={(e) => setFilterSubgroupId(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+            className="form-control"
+            aria-label="Filtra calendario per sottogruppo"
           >
             <option value="">Tutti i sottogruppi</option>
             <option value="MY_EVENTS">I miei impegni</option>
@@ -123,16 +124,16 @@ export default function Calendario() {
                   allDay: false,
                 } as DateClickArg)
               }
-              className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 shrink-0"
+              className="button button--primary shrink-0"
             >
               + Nuovo evento
             </button>
           )}
         </div>
       </div>
-      {error && <p className="mb-3 rounded bg-red-50 text-red-700 px-3 py-2 text-sm">{error}</p>}
+      {error && <p role="alert" className="feedback feedback--error">{error}</p>}
 
-      <div className="rounded-lg bg-white border border-gray-200 p-4">
+      <div className="surface-card surface-card--padded overflow-hidden">
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}

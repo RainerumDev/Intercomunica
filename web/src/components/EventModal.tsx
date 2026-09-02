@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { api } from "../api";
 import type { AppEvent, Subgroup, Tag } from "../types";
 import { asAllDayRange, asTimedValue, commitPendingTag, toEventIso } from "./eventForm";
+import { useDialogFocus } from "./useDialogFocus";
 
 export interface EventDraft {
   id?: string;
@@ -33,6 +34,8 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isEdit = Boolean(draft.id);
+  const titleId = useId();
+  const dialogRef = useDialogFocus({ closeDisabled: busy, onClose });
   const subgroupFolders = useMemo(() => {
     const grouped = new Map<string, Subgroup[]>();
     for (const subgroup of subgroups) {
@@ -43,14 +46,6 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
       .sort(([a], [b]) => a.localeCompare(b, "it"))
       .map(([folder, entries]) => [folder, entries.sort((a, b) => a.name.localeCompare(b.name, "it"))] as const);
   }, [subgroups]);
-
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) onClose();
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [busy, onClose]);
 
   const set = <K extends keyof EventDraft>(key: K, value: EventDraft[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -116,14 +111,19 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white shadow-xl p-6"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="dialog-panel max-w-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">
+          <h2 id={titleId} className="section-heading">
             {readOnly ? "Dettagli evento" : isEdit ? "Modifica evento" : "Nuovo evento"}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">
+          <button aria-label="Chiudi finestra evento" onClick={onClose} className="text-action text-xl">
             ×
           </button>
         </div>
@@ -134,7 +134,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
             onChange={(e) => set("title", e.target.value)}
             disabled={readOnly}
             placeholder="Titolo *"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-medium disabled:bg-gray-50 disabled:text-gray-700"
+            className="form-control font-medium"
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -145,7 +145,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
                 value={form.startsAt}
                 onChange={(e) => set("startsAt", e.target.value)}
                 disabled={readOnly}
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-700"
+                className="form-control mt-1"
               />
             </label>
             <label className="text-sm text-gray-600">
@@ -155,7 +155,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
                 value={form.endsAt}
                 onChange={(e) => set("endsAt", e.target.value)}
                 disabled={readOnly}
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-700"
+                className="form-control mt-1"
               />
             </label>
           </div>
@@ -206,7 +206,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
             onChange={(e) => set("location", e.target.value)}
             disabled={readOnly}
             placeholder="Luogo"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-700"
+            className="form-control"
           />
           <textarea
             value={form.description}
@@ -214,13 +214,13 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
             disabled={readOnly}
             placeholder="Descrizione"
             rows={3}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-700"
+            className="form-control"
           />
 
           {/* Sottogruppi destinatari */}
           <div>
             <p className="text-sm font-medium text-gray-700 mb-1.5">
-              Sottogruppi destinatari {form.isGlobal && <span className="text-gray-400">(ignorati per eventi visibili a tutti)</span>}
+              Sottogruppi destinatari {form.isGlobal && <span className="field-hint">(ignorati per eventi visibili a tutti)</span>}
             </p>
             <div className="space-y-3">
               {subgroupFolders.map(([folder, entries]) => (
@@ -235,11 +235,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
                           type="button"
                           onClick={() => !readOnly && toggleSubgroup(s.id)}
                           disabled={readOnly}
-                          className={`rounded-full px-3 py-1 text-xs font-medium border ${
-                            on
-                              ? "bg-blue-100 border-blue-300 text-blue-800"
-                              : "bg-white border-gray-200 text-gray-500 hover:border-blue-300"
-                          } ${readOnly && !on ? "opacity-50" : ""}`}
+                          className={`choice-chip${on ? " choice-chip--active" : ""}${readOnly && !on ? " opacity-50" : ""}`}
                         >
                           {s.name}
                         </button>
@@ -249,7 +245,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
                 </div>
               ))}
               {subgroups.length === 0 && (
-                <p className="text-sm text-gray-400">Nessun sottogruppo definito.</p>
+                <p className="field-hint text-sm">Nessun sottogruppo definito.</p>
               )}
             </div>
           </div>
@@ -266,6 +262,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
                   {t}
                   {!readOnly && (
                     <button
+                      aria-label={`Rimuovi TAG ${t}`}
                       onClick={() => set("tagNames", form.tagNames.filter((x) => x !== t))}
                       className="text-purple-500 hover:text-purple-900"
                     >
@@ -289,7 +286,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
                 }}
                 placeholder="Aggiungi TAG (es. RIUNIONI, GITE, CORSI)"
                 list="known-tags"
-                className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="form-control flex-1"
               />
               <datalist id="known-tags">
                 {knownTags.map((t) => (
@@ -299,7 +296,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
               <button
                 onClick={() => addTag(tagInput)}
                 disabled={!tagInput.trim()}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-40"
+                className="button button--neutral"
               >
                 +
               </button>
@@ -307,14 +304,14 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
             )}
           </div>
 
-          {error && <p className="rounded bg-red-50 text-red-700 px-3 py-2 text-sm">{error}</p>}
+          {error && <p role="alert" className="feedback feedback--error">{error}</p>}
 
           <div className="flex justify-between pt-2">
             {isEdit && !readOnly ? (
               <button
                 onClick={remove}
                 disabled={busy}
-                className="rounded-md border border-red-300 text-red-700 px-4 py-2 text-sm font-medium hover:bg-red-50 disabled:opacity-50"
+                className="button button--danger"
               >
                 Elimina
               </button>
@@ -324,7 +321,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
             <div className="flex gap-2">
               <button
                 onClick={onClose}
-                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="button button--neutral"
               >
                 {readOnly ? "Chiudi" : "Annulla"}
               </button>
@@ -332,7 +329,7 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
                 <button
                   onClick={save}
                   disabled={busy || !valid}
-                  className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
+                  className="button button--primary"
                 >
                   {busy ? "Salvataggio…" : "Salva"}
                 </button>

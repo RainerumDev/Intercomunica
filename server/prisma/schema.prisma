@@ -80,6 +80,7 @@ model Subgroup {
 
   members SubgroupMember[]
   events  EventSubgroup[]
+  resources SharedResourceSubgroup[]
 }
 
 model SubgroupMember {
@@ -90,6 +91,34 @@ model SubgroupMember {
 
   @@id([subgroupId, userId])
   @@index([userId])
+}
+
+model SharedResource {
+  id               String   @id @default(cuid())
+  url              String
+  title            String
+  description      String?
+  previewEnabled   Boolean  @default(true)
+  previewImageUrl  String?
+  previewSiteName  String?
+  isGlobal         Boolean  @default(false)
+  sortOrder        Int
+  previewFetchedAt DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  subgroups        SharedResourceSubgroup[]
+
+  @@index([sortOrder])
+}
+
+model SharedResourceSubgroup {
+  resourceId String
+  subgroupId String
+  resource   SharedResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  subgroup   Subgroup       @relation(fields: [subgroupId], references: [id], onDelete: Cascade)
+
+  @@id([resourceId, subgroupId])
+  @@index([subgroupId])
 }
 
 // ---------------------------------------------------------------------------

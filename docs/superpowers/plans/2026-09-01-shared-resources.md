@@ -14,6 +14,7 @@
 
 - Resources contain links and metadata only; never accept file uploads.
 - Preview fetching accepts only public HTTP/HTTPS destinations and revalidates every redirect.
+- Previews are text/site/domain only. Ignore external image metadata, keep persisted image fields null, and never issue browser image requests unless a separately approved server-side proxy/cache is implemented.
 - Resource visibility is enforced on the server: global or at least one subgroup in common.
 - Existing event sectioning, filtering, and limits remain unchanged.
 - Intercomunica remains on React 18 in this plan.
@@ -116,7 +117,7 @@ git commit -m "feat(resources): add shared resource schema"
 
 **Interfaces:**
 - Produces: `fetchLinkPreview(url: string, dependencies?: LinkPreviewDependencies): Promise<LinkPreview>`.
-- Produces: `LinkPreview = { finalUrl: string; title: string | null; description: string | null; imageUrl: string | null; siteName: string | null }`.
+- Produces: `LinkPreview = { finalUrl: string; title: string | null; description: string | null; imageUrl: null; siteName: string | null }`; the image field remains only for contract compatibility.
 - Produces: `UnsafePreviewUrlError` for blocked schemes or destinations.
 - Consumes: injected `lookup(hostname)` and `fetch(url, init)` in tests; production defaults use `node:dns/promises` and global `fetch`.
 
@@ -165,16 +166,16 @@ expect(await fetchLinkPreview("https://example.org/article", dependencies)).toEq
   finalUrl: "https://example.org/article",
   title: "Open day 2026",
   description: "Programma e prenotazioni",
-  imageUrl: "https://cdn.example.org/open-day.jpg",
+  imageUrl: null,
   siteName: "Rainerum",
 });
 ```
 
-Add fallback tests for `<title>`, relative image URLs resolved against `finalUrl`, and missing metadata returning nulls.
+Add fallback tests for `<title>`, ignored `og:image` metadata, and missing metadata returning nulls.
 
 - [ ] **Step 6: Implement metadata extraction and rerun tests**
 
-Parse only the first 1 MiB, decode HTML entities needed by titles/descriptions, normalize whitespace, prefer `og:title`, `og:description`, `og:image`, and `og:site_name`, and fall back to `<title>` for the title.
+Parse only the first 1 MiB, decode HTML entities needed by titles/descriptions, normalize whitespace, prefer `og:title`, `og:description`, and `og:site_name`, ignore `og:image`, and fall back to `<title>` for the title.
 
 Run: `npm test --workspace server -- src/services/linkPreview.test.ts`
 
@@ -237,7 +238,7 @@ export type SharedResourceInput = {
 };
 ```
 
-Creation assigns `max(sortOrder) + 1`. Updates replace subgroup relations transactionally. Disabling preview clears preview image, site name, and fetched timestamp. Deletion closes the order gap by normalizing remaining positions.
+Creation assigns `max(sortOrder) + 1`. Updates replace subgroup relations transactionally. Preview image URLs are never persisted; disabling preview also clears site name and fetched timestamp. Deletion closes the order gap by normalizing remaining positions.
 
 - [ ] **Step 4: Write the failing reorder test**
 
@@ -393,7 +394,7 @@ Expected: FAIL because `resourceForm.ts` does not exist.
 
 - [ ] **Step 3: Implement minimal models and helpers**
 
-Use the server contract names exactly. `resourceCardFallback` returns `previewSiteName` when present, otherwise `new URL(url).hostname` with the leading `www.` removed.
+Use the server contract names exactly. Normalization always clears `previewImageUrl`. `resourceCardFallback` returns `previewSiteName` when present, otherwise `new URL(url).hostname` with the leading `www.` removed.
 
 - [ ] **Step 4: Rerun the focused test**
 
@@ -430,7 +431,7 @@ Rename the current default implementation to `CalendarSettings` in the same file
 
 - [ ] **Step 2: Implement the tab shell and resource editor**
 
-Use real buttons with `role="tab"`, `aria-selected`, and matching `role="tabpanel"`. Default to `Calendario`. The resource editor exposes URL, `Genera anteprima`, `Mostra anteprima`, title, description, `Per tutti`, subgroup choices, preview, cancel, and save. Preview errors remain local and never clear draft fields.
+Use real buttons with `role="tab"`, `aria-selected`, and matching `role="tabpanel"`. Default to `Calendario`. The resource editor exposes URL, `Genera anteprima`, `Mostra anteprima`, title, description, `Per tutti`, subgroup choices, a text/site/domain preview, cancel, and save. Preview errors remain local and never clear draft fields. `ResourceCard` never renders an external preview image.
 
 - [ ] **Step 3: Implement list mutations and accessible ordering**
 
@@ -471,7 +472,7 @@ Fetch `BachecaPayload`, render `Risorse condivise` before `Prossimi eventi`, and
 
 - [ ] **Step 2: Verify both independent empty states manually in development**
 
-Exercise: no resources with events, resources with no events, neither collection, preview image unavailable, long title, and subgroup-only resource. Confirm one empty collection never hides the other.
+Exercise: no resources with events, resources with no events, neither collection, text/domain preview fallback, ignored legacy image URL, long title, and subgroup-only resource. Confirm one empty collection never hides the other.
 
 - [ ] **Step 3: Run the frontend gates**
 

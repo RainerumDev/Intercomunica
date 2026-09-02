@@ -1,4 +1,5 @@
 import { prisma } from "../db.js";
+import { listResourcesForUser, type ResourceRecord } from "./sharedResourceService.js";
 
 export interface BachecaEvent {
   id: string;
@@ -16,6 +17,13 @@ export interface BachecaSection {
   tag: string;
   color: string | null;
   events: BachecaEvent[];
+}
+
+export type BachecaResource = ResourceRecord;
+
+export interface BachecaPayload {
+  resources: BachecaResource[];
+  eventSections: BachecaSection[];
 }
 
 export const UNTAGGED_SECTION = "ALTRO";
@@ -80,7 +88,7 @@ export function buildSections(events: SectionInputEvent[]): BachecaSection[] {
  * Per TAG: max 3 upcoming events visible to the user, i.e. events that are
  * global ("visibile a tutti") or shared with a subgroup the user belongs to.
  */
-export async function bachecaForUser(userId: string): Promise<BachecaSection[]> {
+export async function eventSectionsForUser(userId: string): Promise<BachecaSection[]> {
   const memberships = await prisma.subgroupMember.findMany({ where: { userId } });
   const subgroupIds = memberships.map((m) => m.subgroupId);
 
@@ -100,4 +108,12 @@ export async function bachecaForUser(userId: string): Promise<BachecaSection[]> 
   });
 
   return buildSections(events);
+}
+
+export async function bachecaForUser(userId: string): Promise<BachecaPayload> {
+  const [resources, eventSections] = await Promise.all([
+    listResourcesForUser(userId),
+    eventSectionsForUser(userId),
+  ]);
+  return { resources, eventSections };
 }

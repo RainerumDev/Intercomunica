@@ -1,5 +1,26 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { Prisma } from "@prisma/client";
 import type { SectionInputEvent } from "./bachecaService.js";
+
+const bachecaRepository = vi.hoisted(() => ({
+  subgroupMember: { findMany: vi.fn() },
+  event: { findMany: vi.fn() },
+  sharedResource: { findMany: vi.fn() },
+}));
+
+vi.mock("../db.js", () => ({ prisma: bachecaRepository }));
+
+it("exposes the shared-resource persistence contract", () => {
+  const resource = Prisma.dmmf.datamodel.models.find((model) => model.name === "SharedResource");
+  expect(resource?.fields.map((field) => field.name)).toEqual(expect.arrayContaining([
+    "id", "url", "title", "description", "previewEnabled", "previewImageUrl",
+    "previewSiteName", "isGlobal", "sortOrder", "previewFetchedAt",
+    "createdAt", "updatedAt", "subgroups",
+  ]));
+
+  const subgroup = Prisma.dmmf.datamodel.models.find((model) => model.name === "Subgroup");
+  expect(subgroup?.fields.map((field) => field.name)).toEqual(expect.arrayContaining(["resources"]));
+});
 
 let counter = 0;
 function ev(overrides: Partial<SectionInputEvent> & { tagNames?: string[] }): SectionInputEvent {
@@ -59,4 +80,67 @@ describe("buildSections (Flusso 5 — primi 3 per TAG)", () => {
     const { buildSections } = await import("./bachecaService.js");
     expect(buildSections([])).toEqual([]);
   });
+});
+
+it("aggregates ordered resources visible to a subgroup with unchanged event sections", async () => {
+  const visibleResources = [
+    {
+      id: "r-global",
+      url: "https://example.org/global",
+      title: "Global resource",
+      description: null,
+      previewEnabled: true,
+      previewImageUrl: null,
+      previewSiteName: null,
+      previewFetchedAt: null,
+      isGlobal: true,
+      sortOrder: 1,
+      createdAt: new Date("2026-09-01T09:01:00.000Z"),
+      updatedAt: new Date("2026-09-01T09:01:00.000Z"),
+      subgroups: [],
+    },
+    {
+      id: "r-g1",
+      url: "https://example.org/g1",
+      title: "G1 resource",
+      description: null,
+      previewEnabled: false,
+      previewImageUrl: null,
+      previewSiteName: null,
+      previewFetchedAt: null,
+      isGlobal: false,
+      sortOrder: 0,
+      createdAt: new Date("2026-09-01T09:00:00.000Z"),
+      updatedAt: new Date("2026-09-01T09:00:00.000Z"),
+      subgroups: [{ subgroupId: "g1" }],
+    },
+    {
+      id: "r-g2",
+      url: "https://example.org/g2",
+      title: "G2 resource",
+      description: null,
+      previewEnabled: true,
+      previewImageUrl: null,
+      previewSiteName: null,
+      previewFetchedAt: null,
+      isGlobal: false,
+      sortOrder: 2,
+      createdAt: new Date("2026-09-01T09:02:00.000Z"),
+      updatedAt: new Date("2026-09-01T09:02:00.000Z"),
+      subgroups: [{ subgroupId: "g2" }],
+    },
+  ];
+  const events = [ev({ id: "event-1", tagNames: ["RIUNIONI"] })];
+  bachecaRepository.subgroupMember.findMany.mockResolvedValue([{ subgroupId: "g1" }]);
+  bachecaRepository.sharedResource.findMany.mockResolvedValue(visibleResources);
+  bachecaRepository.event.findMany.mockResolvedValue(events);
+
+  const { bachecaForUser, buildSections } = await import("./bachecaService.js");
+  const expectedEventSections = buildSections(events);
+  const payload = await bachecaForUser("teacher-1");
+
+  expect(payload.resources.map((resource) => resource.id)).toEqual(["r-g1", "r-global"]);
+  expect(payload.resources.map((resource) => resource.sortOrder)).toEqual([0, 1]);
+  expect(payload.resources).not.toContainEqual(expect.objectContaining({ id: "r-g2" }));
+  expect(payload.eventSections).toEqual(expectedEventSections);
 });

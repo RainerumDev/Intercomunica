@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import type { AdminConfig, GeneralCalendarSyncResult, SyncLogEntry, SyncResult } from "../types";
+import AdminResources from "./AdminResources";
 
 interface GroupOption {
   email: string;
@@ -9,7 +10,7 @@ interface GroupOption {
 
 const GENERAL_CALENDAR_EXAMPLE = "c_b4c23e467aa6ec43d9d5da28d534233058f7c18cbc8c0341333535c72eb87c29@group.calendar.google.com";
 
-export default function AdminSettings() {
+export function CalendarSettings() {
   const [cfg, setCfg] = useState<AdminConfig | null>(null);
   const [groups, setGroups] = useState<GroupOption[] | null>(null);
   const [selectedGroup, setSelectedGroup] = useState("");
@@ -110,16 +111,16 @@ export default function AdminSettings() {
     }
   };
 
-  if (!cfg) return <p className="text-gray-500">Caricamento…</p>;
+  if (!cfg) return <p role="status" aria-live="polite" className="portal-status">Caricamento…</p>;
 
   return (
-    <div className="max-w-3xl space-y-8">
-      <h1 className="text-2xl font-bold text-gray-900">Impostazioni</h1>
-      {error && <p className="rounded bg-red-50 text-red-700 px-3 py-2 text-sm">{error}</p>}
+    <div className="page page--narrow">
+      <h1 className="page-heading">Impostazioni</h1>
+      {error && <p role="alert" className="feedback feedback--error">{error}</p>}
 
       {/* Flusso 1.1 — account master */}
-      <section className="rounded-lg bg-white border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-800 mb-2">1. Account master</h2>
+      <section className="surface-card surface-card--padded">
+        <h2 className="section-heading mb-2">1. Account master</h2>
         {cfg.masterConnected ? (
           <p className="text-sm text-green-700">
             ✓ Collegato: <strong>{cfg.masterEmail}</strong>
@@ -132,15 +133,15 @@ export default function AdminSettings() {
         )}
         <a
           href="/api/admin/master/connect"
-          className="mt-3 inline-block rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800"
+          className="button button--primary mt-3"
         >
           {cfg.masterConnected ? "Ricollega account" : "Collega account Google"}
         </a>
       </section>
 
       {/* Flusso 1.2 — gruppo principale */}
-      <section className="rounded-lg bg-white border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-800 mb-2">2. Gruppo Google principale</h2>
+      <section className="surface-card surface-card--padded">
+        <h2 className="section-heading mb-2">2. Gruppo Google principale</h2>
         <p className="text-sm text-gray-500 mb-3">
           Il gruppo che contiene tutti i docenti (es. docenti@rainerum.it).
           {cfg.mainGroupEmail && (
@@ -154,16 +155,16 @@ export default function AdminSettings() {
           <button
             onClick={loadGroups}
             disabled={!cfg.masterConnected}
-            className="rounded-md border border-blue-700 text-blue-700 px-4 py-2 text-sm font-medium hover:bg-blue-50 disabled:opacity-50"
+            className="button button--secondary"
           >
             Carica gruppi del dominio
           </button>
         ) : (
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <select
               value={selectedGroup}
               onChange={(e) => setSelectedGroup(e.target.value)}
-              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="form-control min-w-0 flex-1"
             >
               <option value="">— seleziona gruppo —</option>
               {groups.map((g) => (
@@ -175,7 +176,7 @@ export default function AdminSettings() {
             <button
               onClick={() => saveGroup(selectedGroup)}
               disabled={!selectedGroup}
-              className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
+              className="button button--primary"
             >
               Salva
             </button>
@@ -183,15 +184,15 @@ export default function AdminSettings() {
         )}
 
         {groupsHint && (
-          <p className="mt-2 rounded bg-amber-50 text-amber-800 px-3 py-2 text-sm">{groupsHint}</p>
+          <p className="feedback feedback--warning mt-2">{groupsHint}</p>
         )}
 
         {/* Fallback: manual entry — works even without Directory list privileges */}
         <div className="mt-4 border-t border-gray-100 pt-3">
-          <p className="text-xs text-gray-400 mb-2">
+          <p className="field-hint mb-2 text-xs">
             In alternativa, inserisci direttamente l'indirizzo del gruppo:
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <input
               type="email"
               value={manualGroup}
@@ -199,12 +200,12 @@ export default function AdminSettings() {
               onKeyDown={(e) => e.key === "Enter" && manualGroup.includes("@") && saveGroup(manualGroup.trim())}
               placeholder="docenti@rainerum.it"
               disabled={!cfg.masterConnected}
-              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm disabled:opacity-50"
+              className="form-control min-w-0 flex-1"
             />
             <button
               onClick={() => saveGroup(manualGroup.trim())}
               disabled={!cfg.masterConnected || !manualGroup.includes("@")}
-              className="rounded-md border border-blue-700 text-blue-700 px-4 py-2 text-sm font-medium hover:bg-blue-50 disabled:opacity-50"
+              className="button button--secondary"
             >
               Salva
             </button>
@@ -212,8 +213,8 @@ export default function AdminSettings() {
         </div>
       </section>
 
-      <section className="rounded-lg bg-white border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-800 mb-2">3. Calendario generale</h2>
+      <section className="surface-card surface-card--padded">
+        <h2 className="section-heading mb-2">3. Calendario generale</h2>
         <p className="text-sm text-gray-500 mb-3">
           Tutti gli eventi vengono salvati qui. Gli eventi creati direttamente su Google vengono
           importati come visibili a tutti; la prima importazione considera gli ultimi 30 giorni e il futuro.
@@ -221,18 +222,18 @@ export default function AdminSettings() {
         <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="general-calendar-id">
           ID calendario Google
         </label>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <input
             id="general-calendar-id"
             value={generalCalendarId}
             onChange={(event) => setGeneralCalendarId(event.target.value)}
             placeholder={GENERAL_CALENDAR_EXAMPLE}
-            className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm font-mono"
+            className="form-control min-w-0 flex-1 font-mono"
           />
           <button
             onClick={saveGeneralCalendar}
             disabled={savingGeneralCalendar || !generalCalendarId.trim() || generalCalendarId.trim() === cfg.generalCalendarId}
-            className="rounded-md bg-blue-700 px-4 py-2 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50"
+            className="button button--primary"
           >
             {savingGeneralCalendar ? "Collegamento…" : "Salva e collega"}
           </button>
@@ -246,7 +247,7 @@ export default function AdminSettings() {
             <button
               onClick={syncGeneralCalendar}
               disabled={syncingGeneralCalendar}
-              className="mt-2 rounded-md border border-green-700 text-green-700 px-3 py-1.5 text-sm font-medium hover:bg-green-50 disabled:opacity-50"
+              className="button button--success mt-2"
             >
               {syncingGeneralCalendar ? "Sincronizzazione…" : "Sincronizza calendario generale"}
             </button>
@@ -260,22 +261,22 @@ export default function AdminSettings() {
       </section>
 
       {/* Flusso 1.3/1.4 — sync */}
-      <section className="rounded-lg bg-white border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-800 mb-2">4. Sincronizzazione docenti</h2>
+      <section className="surface-card surface-card--padded">
+        <h2 className="section-heading mb-2">4. Sincronizzazione docenti</h2>
         <p className="text-sm text-gray-500 mb-3">
           Importa i membri del gruppo e rimuove eventuali calendari personali Google ancora presenti.
         </p>
         <button
           onClick={runSync}
           disabled={syncing || !cfg.masterConnected || !cfg.mainGroupEmail}
-          className="rounded-md bg-green-700 px-4 py-2 text-white text-sm font-medium hover:bg-green-800 disabled:opacity-50"
+          className="button button--success"
         >
           {syncing ? "Sincronizzazione in corso…" : "🔄 Sincronizza / Refresh"}
         </button>
         {syncLogs.length > 0 && (
           <div className="mt-4">
             <h3 className="text-sm font-medium text-gray-700 mb-2">Storico sincronizzazioni</h3>
-            <div className="overflow-x-auto rounded border border-gray-200">
+            <div className="table-shell">
               <table className="min-w-full text-xs">
                 <thead className="bg-gray-50 text-left text-gray-600">
                   <tr>
@@ -333,6 +334,88 @@ export default function AdminSettings() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+type SettingsTab = "calendar" | "resources";
+
+export default function AdminSettings() {
+  const [activeTab, setActiveTab] = useState<SettingsTab>("calendar");
+  const [resourcesActivated, setResourcesActivated] = useState(false);
+
+  const selectTab = (tab: SettingsTab, focus = true) => {
+    if (tab === "resources") setResourcesActivated(true);
+    setActiveTab(tab);
+    if (focus) {
+      requestAnimationFrame(() => document.getElementById(`settings-${tab}-tab`)?.focus());
+    }
+  };
+
+  const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      selectTab(activeTab === "calendar" ? "resources" : "calendar");
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      selectTab("calendar");
+    } else if (event.key === "End") {
+      event.preventDefault();
+      selectTab("resources");
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div
+        role="tablist"
+        aria-label="Sezioni delle impostazioni"
+        className="tabs"
+      >
+        <button
+          id="settings-calendar-tab"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "calendar"}
+          aria-controls="settings-calendar-panel"
+          tabIndex={activeTab === "calendar" ? 0 : -1}
+          onClick={() => selectTab("calendar", false)}
+          onKeyDown={onTabKeyDown}
+          className={`tab${activeTab === "calendar" ? " tab--active" : ""}`}
+        >
+          Calendario
+        </button>
+        <button
+          id="settings-resources-tab"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "resources"}
+          aria-controls="settings-resources-panel"
+          tabIndex={activeTab === "resources" ? 0 : -1}
+          onClick={() => selectTab("resources", false)}
+          onKeyDown={onTabKeyDown}
+          className={`tab${activeTab === "resources" ? " tab--active" : ""}`}
+        >
+          Risorse condivise
+        </button>
+      </div>
+
+      <div
+        id="settings-calendar-panel"
+        role="tabpanel"
+        aria-labelledby="settings-calendar-tab"
+        hidden={activeTab !== "calendar"}
+      >
+        <CalendarSettings />
+      </div>
+      <div
+        id="settings-resources-panel"
+        role="tabpanel"
+        aria-labelledby="settings-resources-tab"
+        hidden={activeTab !== "resources"}
+      >
+        {resourcesActivated && <AdminResources />}
+      </div>
     </div>
   );
 }

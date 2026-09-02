@@ -39,10 +39,13 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
     const rect = btnRef.current?.getBoundingClientRect();
     if (rect) {
       const popupHeight = 260; // stima dell'altezza massima
+      const gutter = 8;
+      const popupWidth = Math.min(panelRef.current?.offsetWidth || 256, window.innerWidth - gutter * 2);
+      const left = Math.min(Math.max(rect.left, gutter), Math.max(gutter, window.innerWidth - popupWidth - gutter));
       if (rect.bottom + popupHeight > window.innerHeight) {
-        setPos({ bottom: window.innerHeight - rect.top + 4, left: rect.left });
+        setPos({ bottom: window.innerHeight - rect.top + 4, left });
       } else {
-        setPos({ top: rect.bottom + 4, left: rect.left });
+        setPos({ top: rect.bottom + 4, left });
       }
     }
   };
@@ -80,7 +83,7 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {member.subgroups.length === 0 && !isAdmin && (
-        <span className="text-xs text-gray-400">Nessun sottogruppo</span>
+        <span className="field-hint text-xs">Nessun sottogruppo</span>
       )}
 
       {sortSubgroups(member.subgroups).map((s) => (
@@ -106,7 +109,7 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
           ref={btnRef}
           onClick={() => setOpen((v) => !v)}
           title="Aggiungi a un sottogruppo"
-          className="inline-flex items-center justify-center h-6 w-6 rounded-full border border-dashed border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 text-sm leading-none"
+          className="text-action inline-flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-[var(--line-strong)] text-sm leading-none"
         >
           +
         </button>
@@ -121,19 +124,20 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
               top: pos.top !== undefined ? pos.top : "auto",
               bottom: pos.bottom !== undefined ? pos.bottom : "auto",
               left: pos.left,
+              maxWidth: "calc(100vw - 1rem)",
             }}
-            className="z-50 w-64 rounded-lg border border-gray-200 bg-white shadow-lg p-2"
+            className="popover-panel"
           >
             <input
               ref={searchRef}
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Cerca sottogruppo…"
-              className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm mb-2"
+              className="form-control mb-2"
             />
             <div className="max-h-56 overflow-y-auto">
               {available.length === 0 ? (
-                <p className="px-2 py-3 text-center text-xs text-gray-400">
+                <p className="field-hint px-2 py-3 text-center text-xs">
                   {allSubgroups.length === member.subgroups.length
                     ? "Già in tutti i sottogruppi"
                     : "Nessun sottogruppo trovato"}
@@ -146,9 +150,9 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
                       onAdd(member, s.id);
                       setOpen(false);
                     }}
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-blue-50"
+                    className="popover-panel__option"
                   >
-                    <span className="text-blue-600">+</span>
+                    <span className="text-action">+</span>
                     {s.name}
                   </button>
                 ))

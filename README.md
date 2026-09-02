@@ -11,6 +11,10 @@ Applicazione web per l'orchestrazione di Google Calendar, la gestione di sottogr
 | Database | PostgreSQL 16 |
 | Google | OAuth 2.0 · Directory API · Calendar API · Gmail API |
 
+## Linee guida UI
+
+Per marchi, token, accessibilità e adozione Lycoris, consulta le [linee guida UI Rainerum](docs/ui-guidelines.md).
+
 ## Architettura in breve
 
 - L'app collega un **account master** (es. `comunicazione@rainerum.it`) via OAuth offline; il refresh token è cifrato (AES-256-GCM) nel database.
@@ -189,9 +193,20 @@ del deploy.
 
 ```bash
 npm run typecheck   # entrambi i workspace
-npm test            # unit test server (vitest)
+npm test            # test unitari e delle route server; esclude i test con database
 npm run build       # build produzione
 ```
+
+I test di concorrenza PostgreSQL sono separati e richiedono esplicitamente un database usa-e-getta,
+già migrato:
+
+```bash
+INTERCOMUNICA_INTEGRATION_DATABASE_URL='postgresql://utente:password@localhost:5432/intercomunica_test' \
+  npm run test:integration
+```
+
+La variabile è obbligatoria e non ha fallback. Questi test creano ed eliminano record: non puntarli mai
+al database di sviluppo quotidiano o di produzione.
 
 ## Struttura
 
