@@ -154,7 +154,7 @@ export function buildDirectorySections<
     subgroupMembers.forEach((member) => matchedMemberIds.add(member.id));
     const label = subgroup.folder?.trim() || "Generale";
     const existing = sections.find(
-      (section) => section.kind === "folder" && italian.compare(section.label, label) === 0
+      (section) => section.kind === "folder" && section.label === label
     );
     const group = { subgroup, members: subgroupMembers };
 

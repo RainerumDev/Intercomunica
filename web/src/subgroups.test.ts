@@ -220,6 +220,36 @@ describe("subgroup presentation", () => {
     expect(subgroups).toEqual(originalSubgroups);
   });
 
+  it("keeps case- and accent-equivalent normalized folder labels distinct for either input order", async () => {
+    const { buildDirectorySections } = await subject();
+    const members = [
+      { id: "upper", name: "Anna", email: "upper@rainerum.it", subgroups: [{ id: "upper" }] },
+      { id: "lower", name: "Bruno", email: "lower@rainerum.it", subgroups: [{ id: "lower" }] },
+      { id: "plain", name: "Carla", email: "plain@rainerum.it", subgroups: [{ id: "plain" }] },
+      { id: "accent", name: "Dario", email: "accent@rainerum.it", subgroups: [{ id: "accent" }] },
+    ];
+    const subgroups = [
+      { id: "accent", name: "Gruppo B", folder: " Ètica " },
+      { id: "lower", name: "Gruppo B", folder: " classi " },
+      { id: "plain", name: "Gruppo A", folder: " Etica " },
+      { id: "upper", name: "Gruppo A", folder: " Classi " },
+    ];
+    const summarize = (values: typeof subgroups) =>
+      buildDirectorySections(members, values).map((section) => ({
+        label: section.label,
+        groups: section.kind === "folder" ? section.groups.map((group) => group.subgroup.id) : [],
+      }));
+    const expected = [
+      { label: "Classi", groups: ["upper"] },
+      { label: "classi", groups: ["lower"] },
+      { label: "Etica", groups: ["plain"] },
+      { label: "Ètica", groups: ["accent"] },
+    ];
+
+    expect(summarize(subgroups)).toEqual(expected);
+    expect(summarize([...subgroups].reverse())).toEqual(expected);
+  });
+
   it("normalizes manual color overrides and preserves automatic mode", async () => {
     const { normalizeColorOverride } = await subject();
 
