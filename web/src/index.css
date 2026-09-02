@@ -80,6 +80,8 @@ button {
 }
 
 .portal-shell {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
 }
 
@@ -208,9 +210,138 @@ button {
 }
 
 .portal-main {
+  flex: 1;
   width: min(100% - 2rem, 80rem);
   margin-inline: auto;
   padding-block: clamp(1.5rem, 3vw, 2.5rem) 4rem;
+}
+
+.portal-shell--login .login-shell {
+  flex: 1;
+  min-height: auto;
+}
+
+.legal-main {
+  flex: 1;
+  width: min(100% - 2rem, 54rem);
+  margin-inline: auto;
+  padding-block: clamp(2rem, 6vw, 4rem);
+}
+
+.legal-document {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.legal-document__header,
+.legal-document section {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: clamp(1.25rem, 4vw, 2rem);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.legal-document__header {
+  border-top: 4px solid var(--brand);
+}
+
+.legal-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 1.5rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 750;
+  letter-spacing: 0.055em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.legal-brand:hover {
+  color: var(--brand-hover);
+}
+
+.legal-brand img {
+  width: 7.4rem;
+  height: auto;
+  padding-right: 0.8rem;
+  border-right: 1px solid var(--line);
+}
+
+.legal-document__eyebrow {
+  margin: 0 0 0.65rem;
+  color: var(--brand);
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.legal-document h1,
+.legal-document h2 {
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.legal-document h1 {
+  margin: 0;
+  font-size: clamp(1.75rem, 5vw, 2.5rem);
+  letter-spacing: -0.035em;
+}
+
+.legal-document h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+}
+
+.legal-document p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.legal-document p + p {
+  margin-top: 0.8rem;
+}
+
+.legal-document strong {
+  color: var(--ink);
+}
+
+.legal-document a,
+.legal-footer a {
+  color: var(--brand);
+  text-underline-offset: 0.2rem;
+}
+
+.legal-document a:hover,
+.legal-footer a:hover {
+  color: var(--brand-hover);
+}
+
+.legal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: min(100% - 2rem, 80rem);
+  margin-inline: auto;
+  border-top: 1px solid var(--line);
+  padding-block: 1.25rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.legal-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.legal-footer p {
+  margin: 0;
 }
 
 .page {
@@ -903,6 +1034,22 @@ button {
   .portal-main {
     width: min(100% - 1rem, 80rem);
     padding-top: 1.25rem;
+  }
+
+  .legal-main {
+    width: min(100% - 1rem, 54rem);
+    padding-block: 1rem;
+  }
+
+  .legal-brand img {
+    width: 3.25rem;
+    content: url("/rainerum-logo-mark.png");
+  }
+
+  .legal-footer {
+    align-items: flex-start;
+    width: min(100% - 1rem, 80rem);
+    flex-direction: column;
   }
 
   .card-grid {

@@ -2,24 +2,30 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
 const logout = vi.fn();
 let role: "ADMIN" | "TEACHER" = "ADMIN";
+let signedIn = true;
+let loading = false;
 
 vi.mock("./auth", () => ({
   useAuth: () => ({
-    me: {
-      id: "user-1",
-      email: "anna.rossi@rainerum.it",
-      name: "Anna Rossi",
-      picture: null,
-      role,
-      subgroups: [],
-    },
-    loading: false,
+    me: signedIn
+      ? {
+          id: "user-1",
+          email: "anna.rossi@rainerum.it",
+          name: "Anna Rossi",
+          picture: null,
+          role,
+          subgroups: [],
+        }
+      : null,
+    loading,
     logout,
   }),
 }));
@@ -33,6 +39,8 @@ afterEach(() => {
   cleanup();
   logout.mockReset();
   role = "ADMIN";
+  signedIn = true;
+  loading = false;
 });
 
 describe("authenticated portal shell", () => {
@@ -65,6 +73,11 @@ describe("authenticated portal shell", () => {
       "page",
     );
     expect(screen.getByRole("link", { name: "Impostazioni" })).toBeTruthy();
+    expect(screen.getByRole("contentinfo")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Privacy" }).getAttribute("href")).toBe("/privacy");
+    expect(screen.getByRole("link", { name: "Termini di servizio" }).getAttribute("href")).toBe(
+      "/terms",
+    );
 
     await user.click(screen.getByRole("button", { name: "Esci" }));
     expect(logout).toHaveBeenCalledTimes(1);
@@ -80,5 +93,46 @@ describe("authenticated portal shell", () => {
 
     expect(screen.queryByRole("link", { name: "Impostazioni" })).toBeNull();
     expect(screen.getByRole("link", { name: "Bacheca" }).getAttribute("aria-current")).toBe("page");
+  });
+});
+
+describe("public portal routes", () => {
+  it("renders privacy without waiting for or requiring an authenticated session", () => {
+    signedIn = false;
+    loading = true;
+
+    render(
+      <MemoryRouter initialEntries={["/privacy"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Informativa privacy di Intercomunica" })).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Intercomunica" })).toBeNull();
+  });
+
+  it("renders terms without redirecting an anonymous visitor to login", () => {
+    signedIn = false;
+
+    render(
+      <MemoryRouter initialEntries={["/terms"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Termini di servizio di Intercomunica" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Accedi con Google" })).toBeNull();
+  });
+
+  it("uses the official Rainerum mark as the PNG favicon", () => {
+    const document = new DOMParser().parseFromString(
+      readFileSync(resolve(process.cwd(), "index.html"), "utf8"),
+      "text/html",
+    );
+
+    const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    expect(favicon?.type).toBe("image/png");
+    expect(favicon?.getAttribute("href")).toBe("/rainerum-logo-mark.png");
   });
 });

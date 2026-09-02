@@ -5,6 +5,9 @@ import Bacheca from "./pages/Bacheca";
 import Directory from "./pages/Directory";
 import Calendario from "./pages/Calendario";
 import AdminSettings from "./pages/AdminSettings";
+import LegalFooter from "./components/LegalFooter";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 
 function Nav() {
   const { me, logout } = useAuth();
@@ -61,6 +64,24 @@ function Nav() {
 export default function App() {
   const { me, loading } = useAuth();
   const location = useLocation();
+  const isPublicLegalRoute = location.pathname === "/privacy" || location.pathname === "/terms";
+
+  if (isPublicLegalRoute) {
+    return (
+      <div className="portal-shell portal-shell--public">
+        <a href="#main-content" className="skip-link">
+          Vai al contenuto principale
+        </a>
+        <main id="main-content" tabIndex={-1} className="legal-main">
+          <Routes>
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/terms" element={<Terms />} />
+          </Routes>
+        </main>
+        <LegalFooter />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -71,7 +92,12 @@ export default function App() {
   }
   if (!me) {
     if (location.pathname !== "/login") return <Navigate to="/login" replace />;
-    return <Login />;
+    return (
+      <div className="portal-shell portal-shell--login">
+        <Login />
+        <LegalFooter />
+      </div>
+    );
   }
 
   return (
@@ -94,6 +120,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+      <LegalFooter />
     </div>
   );
 }
