@@ -4,6 +4,7 @@ import {
   insertEvent,
   updateEvent as gUpdateEvent,
   deleteEvent as gDeleteEvent,
+  isWritableCalendarAccessRole,
   type CalendarEventPayload,
 } from "../google/calendar.js";
 
@@ -27,6 +28,13 @@ type EventWithRelations = Event & {
 
 interface EventOperationOptions {
   skipGeneral?: boolean;
+}
+
+export class ReadOnlyGeneralCalendarError extends Error {
+  constructor() {
+    super("Il calendario generale è in sola lettura: l'evento non può essere eliminato da Intercomunica");
+    this.name = "ReadOnlyGeneralCalendarError";
+  }
 }
 
 /** Build the Google Calendar payload for a DB event. */
@@ -132,6 +140,9 @@ export async function deleteEventEverywhere(
   if (!options.skipGeneral && event.generalGoogleEventId) {
     const cfg = await prisma.appConfig.findUnique({ where: { id: 1 } });
     if (cfg?.generalCalendarId) {
+      if (!isWritableCalendarAccessRole(cfg.generalCalendarAccessRole)) {
+        throw new ReadOnlyGeneralCalendarError();
+      }
       await gDeleteEvent(cfg.generalCalendarId, event.generalGoogleEventId);
     }
   }
@@ -140,7 +151,10 @@ export async function deleteEventEverywhere(
 
 export async function ensureGeneralCopy(eventId: string): Promise<void> {
   const cfg = await prisma.appConfig.findUnique({ where: { id: 1 } });
-  if (!cfg?.generalCalendarId) return;
+  if (
+    !cfg?.generalCalendarId ||
+    !isWritableCalendarAccessRole(cfg.generalCalendarAccessRole)
+  ) return;
   const event = await loadEvent(eventId);
   const payload = eventToCalendarPayload(event);
   if (event.generalGoogleEventId) {

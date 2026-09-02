@@ -6,6 +6,15 @@ export type PersonalFeedEvent = Prisma.EventGetPayload<{
   include: { tags: { include: { tag: true } } };
 }>;
 
+export function personalCalendarDisplayName(
+  generalCalendarName: string | null | undefined,
+  user: { email: string; name: string | null }
+): string {
+  const calendarName = generalCalendarName?.trim() || "Intercomunica";
+  const teacherName = user.name?.trim() || user.email.split("@", 1)[0] || user.email;
+  return `${calendarName} - ${teacherName}`;
+}
+
 export function personalEventWhere(
   _userId: string,
   subgroupIds: string[]
@@ -25,9 +34,10 @@ export function renderPersonalCalendar(input: {
   user: { id: string; email: string; name: string | null };
   events: PersonalFeedEvent[];
   sourceUrl: string;
+  generalCalendarName: string | null;
 }): string {
   const calendar = ical({
-    name: "Calendario personale Intercomunica",
+    name: personalCalendarDisplayName(input.generalCalendarName, input.user),
     prodId: { company: "Intercomunica", product: "Personal calendar feed" },
     source: input.sourceUrl,
     url: input.sourceUrl,
@@ -66,6 +76,15 @@ export async function loadPersonalCalendar(userId: string, sourceUrl: string): P
     where: { id: userId },
     select: { id: true, email: true, name: true },
   });
+  const appConfig = await prisma.appConfig.findUnique({
+    where: { id: 1 },
+    select: { generalCalendarName: true },
+  });
 
-  return renderPersonalCalendar({ user, events, sourceUrl });
+  return renderPersonalCalendar({
+    user,
+    events,
+    sourceUrl,
+    generalCalendarName: appConfig?.generalCalendarName ?? null,
+  });
 }

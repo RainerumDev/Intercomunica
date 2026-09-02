@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import { config } from "../config.js";
 import {
   fromGoogleEvent,
+  isWritableCalendarAccessRole,
   listCalendarChanges,
   stopCalendarWatch,
   watchCalendar,
@@ -34,10 +35,10 @@ export function importedEventDefaults() {
 }
 
 export function distributionForGoogleEvent(
-  appEventId: string | undefined,
+  _appEventId: string | undefined,
   linked?: { isGlobal: boolean; bachecaOnly: boolean; subgroupIds: string[] }
 ) {
-  return appEventId && linked
+  return linked
     ? {
         isGlobal: linked.isGlobal,
         bachecaOnly: linked.bachecaOnly,
@@ -46,7 +47,20 @@ export function distributionForGoogleEvent(
     : importedEventDefaults();
 }
 
-async function applyGoogleEvent(source: calendar_v3.Schema$Event) {
+export function tagNamesForGoogleEvent(
+  importedTagNames: string[],
+  linkedTagNames: string[] | undefined,
+  generalCalendarWritable: boolean
+): string[] {
+  return !generalCalendarWritable && linkedTagNames
+    ? linkedTagNames
+    : importedTagNames;
+}
+
+async function applyGoogleEvent(
+  source: calendar_v3.Schema$Event,
+  generalCalendarWritable: boolean
+) {
   if (!source.id) return "ignored" as const;
   if (source.status === "cancelled") {
     const existing = await prisma.event.findUnique({ where: { generalGoogleEventId: source.id } });
@@ -64,7 +78,7 @@ async function applyGoogleEvent(source: calendar_v3.Schema$Event) {
         ...(imported.appEventId ? [{ id: imported.appEventId }] : []),
       ],
     },
-    include: { subgroups: true },
+    include: { subgroups: true, tags: { include: { tag: true } } },
   });
   const distribution = distributionForGoogleEvent(
     imported.appEventId,
@@ -84,7 +98,11 @@ async function applyGoogleEvent(source: calendar_v3.Schema$Event) {
     endsAt: imported.endsAt,
     allDay: imported.allDay,
     ...distribution,
-    tagNames: imported.tagNames,
+    tagNames: tagNamesForGoogleEvent(
+      imported.tagNames,
+      linked?.tags.map((entry) => entry.tag.name),
+      generalCalendarWritable
+    ),
   };
 
   if (linked) {
@@ -126,15 +144,27 @@ async function performGeneralCalendarSync(): Promise<GeneralCalendarSyncResult> 
       changes = await listCalendarChanges(cfg.generalCalendarId, { timeMin: initialSyncTimeMin() });
     }
 
+    const effectiveAccessRole = changes.accessRole ?? cfg.generalCalendarAccessRole;
+    const generalCalendarWritable = isWritableCalendarAccessRole(effectiveAccessRole);
+    await prisma.appConfig.update({
+      where: { id: 1 },
+      data: {
+        generalCalendarName: changes.calendarName ?? cfg.generalCalendarName,
+        generalCalendarAccessRole: effectiveAccessRole,
+      },
+    });
+
     for (const item of changes.items) {
-      const outcome = await applyGoogleEvent(item);
+      const outcome = await applyGoogleEvent(item, generalCalendarWritable);
       if (outcome !== "ignored") result[outcome]++;
     }
-    const unlinkedEvents = await prisma.event.findMany({
-      where: { generalGoogleEventId: null },
-      select: { id: true },
-    });
-    for (const event of unlinkedEvents) await ensureGeneralCopy(event.id);
+    if (generalCalendarWritable) {
+      const unlinkedEvents = await prisma.event.findMany({
+        where: { generalGoogleEventId: null },
+        select: { id: true },
+      });
+      for (const event of unlinkedEvents) await ensureGeneralCopy(event.id);
+    }
     await prisma.appConfig.update({
       where: { id: 1 },
       data: {
@@ -172,6 +202,8 @@ export async function configureGeneralCalendar(calendarId: string): Promise<void
     create: { id: 1, generalCalendarId: calendarId },
     update: {
       generalCalendarId: calendarId,
+      generalCalendarName: null,
+      generalCalendarAccessRole: null,
       generalCalendarSyncToken: null,
       generalCalendarChannelId: null,
       generalCalendarResourceId: null,

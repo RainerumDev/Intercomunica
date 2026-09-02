@@ -21,6 +21,8 @@ model AppConfig {
   /// Template for teacher calendar names, e.g. "Calendario Rainerum 26/27 - {nome}"
   calendarNameTemplate  String?
   generalCalendarId             String?
+  generalCalendarName           String?
+  generalCalendarAccessRole     String?
   generalCalendarSyncToken      String?
   generalCalendarChannelId      String?
   generalCalendarResourceId     String?

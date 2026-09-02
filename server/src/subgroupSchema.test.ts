@@ -41,4 +41,26 @@ describe("Subgroup schema", () => {
     );
     expect(migration).toContain('CREATE UNIQUE INDEX "User_calendarFeedTokenHash_key"');
   });
+
+  it("stores general-calendar name and access role discovered during import", () => {
+    const appConfig = Prisma.dmmf.datamodel.models.find((model) => model.name === "AppConfig");
+    const metadata = ["generalCalendarName", "generalCalendarAccessRole"].map((name) =>
+      appConfig?.fields.find((field) => field.name === name)
+    );
+
+    expect(metadata).toEqual([
+      expect.objectContaining({ type: "String", isRequired: false }),
+      expect.objectContaining({ type: "String", isRequired: false }),
+    ]);
+
+    const migration = readFileSync(
+      new URL(
+        "../prisma/migrations/20260902000000_general_calendar_metadata/migration.sql",
+        import.meta.url
+      ),
+      "utf8"
+    );
+    expect(migration).toContain('ADD COLUMN "generalCalendarName" TEXT');
+    expect(migration).toContain('ADD COLUMN "generalCalendarAccessRole" TEXT');
+  });
 });

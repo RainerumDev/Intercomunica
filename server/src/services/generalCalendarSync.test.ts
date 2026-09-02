@@ -26,4 +26,25 @@ describe("general calendar synchronization rules", () => {
       })
     ).toEqual({ isGlobal: false, bachecaOnly: false, subgroupIds: ["classe-1a"] });
   });
+
+  it("preserves local distribution for an already imported external event", async () => {
+    const { distributionForGoogleEvent } = await import("./generalCalendarSync.js");
+    expect(
+      distributionForGoogleEvent(undefined, {
+        isGlobal: false,
+        bachecaOnly: true,
+        subgroupIds: ["classe-2b"],
+      })
+    ).toEqual({ isGlobal: false, bachecaOnly: true, subgroupIds: ["classe-2b"] });
+  });
+
+  it("keeps local tags for linked events when the general calendar is read-only", async () => {
+    const { tagNamesForGoogleEvent } = await import("./generalCalendarSync.js");
+    expect(tagNamesForGoogleEvent(["GOOGLE"], ["LOCALE", "DOCENTI"], false)).toEqual([
+      "LOCALE",
+      "DOCENTI",
+    ]);
+    expect(tagNamesForGoogleEvent(["GOOGLE"], ["LOCALE"], true)).toEqual(["GOOGLE"]);
+    expect(tagNamesForGoogleEvent(["GOOGLE"], [], false)).toEqual([]);
+  });
 });

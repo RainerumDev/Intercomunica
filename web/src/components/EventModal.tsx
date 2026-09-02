@@ -14,6 +14,7 @@ export interface EventDraft {
   allDay: boolean;
   isGlobal: boolean;
   bachecaOnly: boolean;
+  hasGeneralCalendarEvent?: boolean;
   subgroupIds: string[];
   tagNames: string[];
 }
@@ -23,12 +24,40 @@ interface Props {
   subgroups: Subgroup[];
   knownTags: Tag[];
   readOnly?: boolean;
+  generalCalendarReadOnly?: boolean;
   onSaved: () => void;
   onDeleted: () => void;
   onClose: () => void;
 }
 
-export default function EventModal({ draft, subgroups, knownTags, readOnly, onSaved, onDeleted, onClose }: Props) {
+const GOOGLE_NATIVE_EVENT_FIELDS: (keyof EventDraft)[] = [
+  "title",
+  "description",
+  "location",
+  "startsAt",
+  "endsAt",
+  "allDay",
+];
+
+export function shouldWarnForReadOnlyCalendar(
+  initial: EventDraft,
+  current: EventDraft,
+  isEdit: boolean
+): boolean {
+  if (!isEdit) return true;
+  return GOOGLE_NATIVE_EVENT_FIELDS.some((field) => initial[field] !== current[field]);
+}
+
+export default function EventModal({
+  draft,
+  subgroups,
+  knownTags,
+  readOnly,
+  generalCalendarReadOnly,
+  onSaved,
+  onDeleted,
+  onClose,
+}: Props) {
   const [form, setForm] = useState<EventDraft>(draft);
   const [tagInput, setTagInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -107,6 +136,10 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
     form.startsAt &&
     form.endsAt &&
     (form.isGlobal || form.bachecaOnly || form.subgroupIds.length > 0);
+  const showGeneralCalendarWarning =
+    generalCalendarReadOnly && shouldWarnForReadOnlyCalendar(draft, form, isEdit);
+  const linkedReadOnlyEvent =
+    Boolean(generalCalendarReadOnly && draft.hasGeneralCalendarEvent);
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
@@ -304,10 +337,22 @@ export default function EventModal({ draft, subgroups, knownTags, readOnly, onSa
             )}
           </div>
 
+          {showGeneralCalendarWarning && (
+            <p role="alert" className="feedback feedback--warning">
+              Il calendario generale è in sola lettura: l'evento verrà salvato solo in Intercomunica e non verrà sincronizzato con il calendario generale.
+            </p>
+          )}
+
+          {linkedReadOnlyEvent && (
+            <p className="field-hint">
+              Questo evento appartiene al calendario generale in sola lettura e non può essere eliminato da Intercomunica.
+            </p>
+          )}
+
           {error && <p role="alert" className="feedback feedback--error">{error}</p>}
 
           <div className="flex justify-between pt-2">
-            {isEdit && !readOnly ? (
+            {isEdit && !readOnly && !linkedReadOnlyEvent ? (
               <button
                 onClick={remove}
                 disabled={busy}

@@ -39,8 +39,14 @@ export interface AppEvent {
   allDay: boolean;
   isGlobal: boolean;
   bachecaOnly: boolean;
+  hasGeneralCalendarEvent: boolean;
   tags: Tag[];
   subgroupIds: string[];
+}
+
+export interface EventCalendarCapabilities {
+  generalCalendarConfigured: boolean;
+  generalCalendarWritable: boolean;
 }
 
 export interface BachecaSection {

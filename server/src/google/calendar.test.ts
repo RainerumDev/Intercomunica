@@ -4,11 +4,13 @@ import type { calendar_v3 } from "googleapis";
 
 const google = vi.hoisted(() => ({
   deleteCalendar: vi.fn(),
+  listEvents: vi.fn(),
 }));
 
 vi.mock("./master.js", () => ({
   calendarApi: vi.fn(async () => ({
     calendars: { delete: google.deleteCalendar },
+    events: { list: google.listEvents },
   })),
 }));
 
@@ -28,7 +30,30 @@ const base: CalendarEventPayload = {
 };
 
 beforeEach(() => {
-  google.deleteCalendar.mockReset();
+  for (const mock of Object.values(google)) mock.mockReset();
+});
+
+describe("listCalendarChanges", () => {
+  it("returns the calendar name and access role already supplied by events.list", async () => {
+    google.listEvents.mockResolvedValue({
+      data: {
+        items: [],
+        nextSyncToken: "sync-2",
+        summary: "Calendario generale Rainerum",
+        accessRole: "reader",
+      },
+    });
+    const { listCalendarChanges } = await import("./calendar.js");
+
+    await expect(
+      listCalendarChanges("general-calendar", { syncToken: "sync-1" })
+    ).resolves.toEqual({
+      items: [],
+      nextSyncToken: "sync-2",
+      calendarName: "Calendario generale Rainerum",
+      accessRole: "reader",
+    });
+  });
 });
 
 function gaxiosError(status: number) {

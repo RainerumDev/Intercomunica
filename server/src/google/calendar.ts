@@ -35,6 +35,12 @@ export interface ImportedCalendarEvent {
 export interface CalendarChanges {
   items: calendar_v3.Schema$Event[];
   nextSyncToken: string;
+  calendarName: string | null;
+  accessRole: string | null;
+}
+
+export function isWritableCalendarAccessRole(accessRole: string | null | undefined): boolean {
+  return accessRole === "writer" || accessRole === "owner";
 }
 
 export function toGoogleEvent(p: CalendarEventPayload) {
@@ -171,6 +177,8 @@ export async function listCalendarChanges(
   const items: calendar_v3.Schema$Event[] = [];
   let pageToken: string | undefined;
   let nextSyncToken: string | undefined;
+  let calendarName: string | null = null;
+  let accessRole: string | null = null;
   do {
     const res = await withRetry(() =>
       cal.events.list({
@@ -184,11 +192,13 @@ export async function listCalendarChanges(
       })
     );
     items.push(...(res.data.items ?? []));
+    calendarName = res.data.summary?.trim() || calendarName;
+    accessRole = res.data.accessRole ?? accessRole;
     pageToken = res.data.nextPageToken ?? undefined;
     nextSyncToken = res.data.nextSyncToken ?? nextSyncToken;
   } while (pageToken);
   if (!nextSyncToken) throw new Error("Google non ha restituito il token di sincronizzazione");
-  return { items, nextSyncToken };
+  return { items, nextSyncToken, calendarName, accessRole };
 }
 
 export async function watchCalendar(

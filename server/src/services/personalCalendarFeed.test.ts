@@ -58,6 +58,7 @@ describe("personal calendar feeds", () => {
       user: { id: "u1", email: "kevin.delugan@rainerum.it", name: "Kevin Delugan" },
       events,
       sourceUrl: "https://intercomunica.rainerum.delugan.net/calendar/feed/kevin-secret.ics",
+      generalCalendarName: "Calendario generale Rainerum",
     };
 
     const ics = renderPersonalCalendar(input);
@@ -71,6 +72,7 @@ describe("personal calendar feeds", () => {
     expect(ics).toContain("DESCRIPTION:Prima riga\\nSeconda riga");
     expect(ics).toContain("LOCATION:Aula\\, 2");
     expect(ics).toContain("LAST-MODIFIED:20260901T123456Z");
+    expect(ics).toContain("X-WR-CALNAME:Calendario generale Rainerum - Kevin Delugan");
     expect(ics).not.toContain("bachecaOnly");
     expect(renderPersonalCalendar(input)).toBe(renderPersonalCalendar(input));
   });
@@ -88,8 +90,19 @@ describe("personal calendar feeds", () => {
         },
       ],
       sourceUrl: "https://intercomunica.rainerum.delugan.net/calendar/feed/kevin-secret.ics",
+      generalCalendarName: null,
     };
 
     expect(renderPersonalCalendar(input)).toContain("CATEGORIES:ALFA,ZETA");
+  });
+
+  it("falls back to Intercomunica and the email local part when names are missing", async () => {
+    const { personalCalendarDisplayName } = await import("./personalCalendarFeed.js");
+    expect(
+      personalCalendarDisplayName(null, {
+        email: "mario.rossi@rainerum.it",
+        name: null,
+      })
+    ).toBe("Intercomunica - mario.rossi");
   });
 });

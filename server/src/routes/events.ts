@@ -2,10 +2,28 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { requireAdmin, requireAuth } from "../auth/session.js";
-import { createEvent, updateEvent, deleteEventEverywhere } from "../services/eventService.js";
+import {
+  createEvent,
+  updateEvent,
+  deleteEventEverywhere,
+  ReadOnlyGeneralCalendarError,
+} from "../services/eventService.js";
+import { isWritableCalendarAccessRole } from "../google/calendar.js";
 import { h, parseBody } from "./helpers.js";
 
 export const eventsRouter = Router();
+
+export function calendarCapabilities(config: {
+  generalCalendarId: string | null;
+  generalCalendarAccessRole: string | null;
+}) {
+  return {
+    generalCalendarConfigured: Boolean(config.generalCalendarId),
+    generalCalendarWritable:
+      Boolean(config.generalCalendarId) &&
+      isWritableCalendarAccessRole(config.generalCalendarAccessRole),
+  };
+}
 
 const eventSchema = z
   .object({
@@ -28,7 +46,7 @@ const eventSchema = z
     message: "Selezionare almeno un sottogruppo (o attivare 'Visibile a tutti' / 'Solo bacheca')",
   });
 
-function serialize(e: {
+export function serializeEvent(e: {
   id: string;
   title: string;
   description: string | null;
@@ -38,6 +56,7 @@ function serialize(e: {
   allDay: boolean;
   isGlobal: boolean;
   bachecaOnly: boolean;
+  generalGoogleEventId: string | null;
   tags: { tag: { id: string; name: string; color: string | null } }[];
   subgroups: { subgroupId: string }[];
 }) {
@@ -51,6 +70,7 @@ function serialize(e: {
     allDay: e.allDay,
     isGlobal: e.isGlobal,
     bachecaOnly: e.bachecaOnly,
+    hasGeneralCalendarEvent: Boolean(e.generalGoogleEventId),
     tags: e.tags.map((t) => ({ id: t.tag.id, name: t.tag.name, color: t.tag.color })),
     subgroupIds: e.subgroups.map((s) => s.subgroupId),
   };
@@ -60,6 +80,23 @@ const includeRelations = {
   tags: { include: { tag: true } },
   subgroups: true,
 } as const;
+
+eventsRouter.get(
+  "/capabilities",
+  requireAuth,
+  h(async (_req, res) => {
+    const config = await prisma.appConfig.findUnique({
+      where: { id: 1 },
+      select: { generalCalendarId: true, generalCalendarAccessRole: true },
+    });
+    res.json(
+      calendarCapabilities({
+        generalCalendarId: config?.generalCalendarId ?? null,
+        generalCalendarAccessRole: config?.generalCalendarAccessRole ?? null,
+      })
+    );
+  })
+);
 
 /** Admin calendar view: events in a date range (?from=&to=). */
 eventsRouter.get(
@@ -73,7 +110,7 @@ eventsRouter.get(
       include: includeRelations,
       orderBy: { startsAt: "asc" },
     });
-    res.json(events.map(serialize));
+    res.json(events.map(serializeEvent));
   })
 );
 
@@ -88,7 +125,7 @@ eventsRouter.post(
       where: { id: event.id },
       include: includeRelations,
     });
-    res.status(201).json(serialize(full));
+    res.status(201).json(serializeEvent(full));
   })
 );
 
@@ -103,7 +140,7 @@ eventsRouter.put(
       where: { id: req.params.id },
       include: includeRelations,
     });
-    res.json(serialize(full));
+    res.json(serializeEvent(full));
   })
 );
 
@@ -111,7 +148,18 @@ eventsRouter.delete(
   "/:id",
   requireAdmin,
   h(async (req, res) => {
-    await deleteEventEverywhere(req.params.id);
+    try {
+      await deleteEventEverywhere(req.params.id);
+    } catch (error) {
+      if (error instanceof ReadOnlyGeneralCalendarError) {
+        res.status(409).json({
+          error: error.message,
+          code: "GENERAL_CALENDAR_READ_ONLY",
+        });
+        return;
+      }
+      throw error;
+    }
     res.json({ ok: true });
   })
 );

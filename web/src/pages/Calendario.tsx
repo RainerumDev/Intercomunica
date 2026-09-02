@@ -7,7 +7,7 @@ import interactionPlugin, { type DateClickArg } from "@fullcalendar/interaction"
 import itLocale from "@fullcalendar/core/locales/it";
 import type { EventClickArg, EventInput } from "@fullcalendar/core";
 import { api } from "../api";
-import type { AppEvent, Subgroup, Tag } from "../types";
+import type { AppEvent, EventCalendarCapabilities, Subgroup, Tag } from "../types";
 import EventModal, { type EventDraft } from "../components/EventModal";
 import { useAuth } from "../auth";
 
@@ -23,19 +23,25 @@ export default function Calendario() {
   const [filterSubgroupId, setFilterSubgroupId] = useState<string>("");
   const [draft, setDraft] = useState<EventDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [calendarCapabilities, setCalendarCapabilities] = useState<EventCalendarCapabilities>({
+    generalCalendarConfigured: false,
+    generalCalendarWritable: false,
+  });
   const calendarRef = useRef<FullCalendar | null>(null);
   const { me } = useAuth();
   const isAdmin = me?.role === "ADMIN";
 
   const reload = useCallback(async () => {
-    const [e, s, t] = await Promise.all([
+    const [e, s, t, capabilities] = await Promise.all([
       api.get<AppEvent[]>("/api/events?from=2000-01-01&to=2100-01-01"),
       api.get<Subgroup[]>("/api/subgroups"),
       api.get<Tag[]>("/api/tags"),
+      api.get<EventCalendarCapabilities>("/api/events/capabilities"),
     ]);
     setEvents(e);
     setSubgroups(s);
     setTags(t);
+    setCalendarCapabilities(capabilities);
   }, []);
 
   useEffect(() => {
@@ -74,6 +80,7 @@ export default function Calendario() {
       allDay: arg.allDay,
       isGlobal: false,
       bachecaOnly: false,
+      hasGeneralCalendarEvent: false,
       subgroupIds: [],
       tagNames: [],
     });
@@ -92,6 +99,7 @@ export default function Calendario() {
       allDay: e.allDay,
       isGlobal: e.isGlobal,
       bachecaOnly: e.bachecaOnly,
+      hasGeneralCalendarEvent: e.hasGeneralCalendarEvent,
       subgroupIds: e.subgroupIds,
       tagNames: e.tags.map((t) => t.name),
     });
@@ -159,6 +167,10 @@ export default function Calendario() {
           subgroups={subgroups}
           knownTags={tags}
           readOnly={!isAdmin}
+          generalCalendarReadOnly={
+            calendarCapabilities.generalCalendarConfigured &&
+            !calendarCapabilities.generalCalendarWritable
+          }
           onSaved={() => {
             setDraft(null);
             reload();

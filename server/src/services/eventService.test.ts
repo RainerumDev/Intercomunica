@@ -44,6 +44,8 @@ vi.mock("../google/calendar.js", () => ({
   insertEvent: google.insertEvent,
   updateEvent: google.updateEvent,
   deleteEvent: google.deleteEvent,
+  isWritableCalendarAccessRole: (role: string | null | undefined) =>
+    role === "writer" || role === "owner",
 }));
 
 const event = {
@@ -81,7 +83,10 @@ beforeEach(() => {
   db.eventUpdate.mockResolvedValue(event);
   db.eventFindUniqueOrThrow.mockResolvedValue(event);
   db.eventDelete.mockResolvedValue(event);
-  db.appConfigFindUnique.mockResolvedValue({ generalCalendarId: "general-calendar" });
+  db.appConfigFindUnique.mockResolvedValue({
+    generalCalendarId: "general-calendar",
+    generalCalendarAccessRole: "writer",
+  });
   db.userFindMany.mockResolvedValue([
     { id: "user-1", email: "docente@rainerum.it", calendarId: "personal-calendar" },
   ]);
@@ -109,6 +114,35 @@ describe("event writes after personal calendar retirement", () => {
     expect(db.eventInstanceDelete).not.toHaveBeenCalled();
     expect(db.eventInstanceFindMany).not.toHaveBeenCalled();
     expect(db.userFindMany).not.toHaveBeenCalled();
+  });
+
+  it("keeps a new event local when the general calendar is read-only", async () => {
+    db.appConfigFindUnique.mockResolvedValue({
+      generalCalendarId: "general-calendar",
+      generalCalendarAccessRole: "reader",
+    });
+    db.eventFindUniqueOrThrow.mockResolvedValue({ ...event, generalGoogleEventId: null });
+    const { createEvent } = await import("./eventService.js");
+
+    await createEvent(input, "admin-1");
+
+    expect(db.eventCreate).toHaveBeenCalledOnce();
+    expect(google.insertEvent).not.toHaveBeenCalled();
+    expect(google.updateEvent).not.toHaveBeenCalled();
+  });
+
+  it("keeps an event update local when the general calendar is read-only", async () => {
+    db.appConfigFindUnique.mockResolvedValue({
+      generalCalendarId: "general-calendar",
+      generalCalendarAccessRole: "reader",
+    });
+    const { updateEvent } = await import("./eventService.js");
+
+    await updateEvent("event-1", input);
+
+    expect(db.eventUpdate).toHaveBeenCalled();
+    expect(google.insertEvent).not.toHaveBeenCalled();
+    expect(google.updateEvent).not.toHaveBeenCalled();
   });
 
   it("updates at most the general-calendar copy and no personal instance", async () => {
@@ -164,5 +198,21 @@ describe("event writes after personal calendar retirement", () => {
     expect(db.eventInstanceDelete).not.toHaveBeenCalled();
     expect(db.eventInstanceFindMany).not.toHaveBeenCalled();
     expect(db.userFindMany).not.toHaveBeenCalled();
+  });
+
+  it("does not attempt to delete a linked Google event from a read-only calendar", async () => {
+    db.appConfigFindUnique.mockResolvedValue({
+      generalCalendarId: "general-calendar",
+      generalCalendarAccessRole: "reader",
+    });
+    const { deleteEventEverywhere, ReadOnlyGeneralCalendarError } = await import(
+      "./eventService.js"
+    );
+
+    await expect(deleteEventEverywhere("event-1")).rejects.toBeInstanceOf(
+      ReadOnlyGeneralCalendarError
+    );
+    expect(google.deleteEvent).not.toHaveBeenCalled();
+    expect(db.eventDelete).not.toHaveBeenCalled();
   });
 });
