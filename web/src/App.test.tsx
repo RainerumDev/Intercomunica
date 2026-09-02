@@ -110,6 +110,10 @@ describe("public portal routes", () => {
     expect(screen.getByRole("heading", { name: "Informativa privacy di Intercomunica" })).toBeTruthy();
     expect(screen.queryByRole("status")).toBeNull();
     expect(screen.queryByRole("heading", { name: "Intercomunica" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Privacy" }).getAttribute("href")).toBe("/privacy");
+    expect(screen.getByRole("link", { name: "Termini di servizio" }).getAttribute("href")).toBe(
+      "/terms",
+    );
   });
 
   it("renders terms without redirecting an anonymous visitor to login", () => {
@@ -123,6 +127,39 @@ describe("public portal routes", () => {
 
     expect(screen.getByRole("heading", { name: "Termini di servizio di Intercomunica" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Accedi con Google" })).toBeNull();
+  });
+
+  it.each([
+    ["/privacy/", "Informativa privacy di Intercomunica"],
+    ["/terms/", "Termini di servizio di Intercomunica"],
+  ])("normalizes the anonymous legal route %s", (path, heading) => {
+    signedIn = false;
+    loading = true;
+
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("shows legal footer links on the anonymous login route", () => {
+    signedIn = false;
+
+    render(
+      <MemoryRouter initialEntries={["/login"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Intercomunica" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Privacy" }).getAttribute("href")).toBe("/privacy");
+    expect(screen.getByRole("link", { name: "Termini di servizio" }).getAttribute("href")).toBe(
+      "/terms",
+    );
   });
 
   it("uses the official Rainerum mark as the PNG favicon", () => {

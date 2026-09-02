@@ -64,7 +64,8 @@ function Nav() {
 export default function App() {
   const { me, loading } = useAuth();
   const location = useLocation();
-  const isPublicLegalRoute = location.pathname === "/privacy" || location.pathname === "/terms";
+  const normalizedPathname = location.pathname.replace(/\/+$/u, "") || "/";
+  const isPublicLegalRoute = normalizedPathname === "/privacy" || normalizedPathname === "/terms";
 
   if (isPublicLegalRoute) {
     return (
@@ -73,7 +74,7 @@ export default function App() {
           Vai al contenuto principale
         </a>
         <main id="main-content" tabIndex={-1} className="legal-main">
-          <Routes>
+          <Routes location={normalizedPathname}>
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
           </Routes>

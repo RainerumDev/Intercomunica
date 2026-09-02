@@ -44,6 +44,46 @@ describe("Intercomunica legal pages", () => {
     expect(screen.getByText(/devono essere confermati dal Rainerum/i)).toBeTruthy();
   });
 
+  it.each([
+    {
+      access: /soltanto agli amministratori/i,
+      data: /nomi e cognomi degli studenti.*email.*classe.*tutori.*nome.*email/i,
+      heading: "Anagrafica studenti e tutori",
+      purpose: /gestire l’anagrafica scolastica/i,
+      route: "/api/wip/students",
+    },
+    {
+      access: /utenti autenticati/i,
+      data: /data di nascita.*onomastico/i,
+      heading: "Compleanni e onomastici",
+      purpose: /compleanni del giorno/i,
+      route: "/api/wip/birthdays/today",
+    },
+    {
+      access: /feed RSS.*token statico/i,
+      data: /nome.*docente o studente.*classe/i,
+      heading: "Bacheca e digital signage",
+      purpose: /distribuire i compleanni del giorno/i,
+      route: "/api/wip/birthdays/rss",
+    },
+    {
+      access: /soltanto agli amministratori/i,
+      data: /sistema sorgente.*payload JSON/i,
+      heading: "Importazione dell’orario",
+      purpose: /registrare l’importazione.*conversione/i,
+      route: "/api/wip/timetable/import",
+    },
+  ])("documents the active treatment exposed by $route", ({ access, data, heading, purpose }) => {
+    renderInRouter(<Privacy />);
+
+    const treatmentHeading = screen.getByRole("heading", { name: heading });
+    const treatment = treatmentHeading.closest("section");
+
+    expect(treatment?.textContent).toMatch(data);
+    expect(treatment?.textContent).toMatch(purpose);
+    expect(treatment?.textContent).toMatch(access);
+  });
+
   it("states the client-provider allocation in the terms without inventing a court", () => {
     const { container } = renderInRouter(<Terms />);
 

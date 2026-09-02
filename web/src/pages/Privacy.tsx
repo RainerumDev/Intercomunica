@@ -10,7 +10,7 @@ export default function Privacy() {
           <img src="/rainerum-logo-full.png" alt="" aria-hidden="true" />
           <span>Intercomunica</span>
         </Link>
-        <p className="legal-document__eyebrow">Bozza 1.0 · aggiornata al 2 settembre 2026</p>
+        <p className="legal-document__eyebrow">Bozza 1.1 · aggiornata al 3 settembre 2026</p>
         <h1>Informativa privacy di Intercomunica</h1>
         <p>
           Informativa specifica per la piattaforma di comunicazione interna, calendario e risorse
@@ -53,6 +53,76 @@ export default function Privacy() {
           Questi dati servono ad autorizzare l’accesso, organizzare i docenti, mostrare bacheca e
           calendario, condividere risorse, sincronizzare le informazioni e inviare comunicazioni
           ai destinatari selezionati.
+        </p>
+        <p>
+          Il codice espone inoltre i seguenti trattamenti, anche se le relative funzioni sono
+          indicate come in predisposizione. Per ciascuno sono riportati dati, finalità e canale di
+          accesso attualmente implementati.
+        </p>
+      </section>
+
+      <section>
+        <h2>Anagrafica studenti e tutori</h2>
+        <p>
+          <strong>Dati:</strong> nomi e cognomi degli studenti, eventuale email, classe, anno di
+          corso, indirizzo, livello scolastico, data di nascita e onomastico; per i tutori
+          associati, nome e email.
+        </p>
+        <p>
+          <strong>Finalità:</strong> gestire l’anagrafica scolastica e il collegamento tra studenti
+          e tutori.
+        </p>
+        <p>
+          <strong>Accesso:</strong> il canale API di consultazione è riservato soltanto agli
+          amministratori autenticati.
+        </p>
+      </section>
+
+      <section>
+        <h2>Compleanni e onomastici</h2>
+        <p>
+          <strong>Dati:</strong> per docenti e studenti possono essere memorizzati data di nascita
+          e onomastico. L’endpoint attivo calcola i compleanni dalla sola data di nascita;
+          l’onomastico è predisposto ma non viene distribuito da questo endpoint.
+        </p>
+        <p>
+          <strong>Finalità:</strong> formare l’elenco dei compleanni del giorno per la bacheca.
+        </p>
+        <p>
+          <strong>Accesso:</strong> il canale della bacheca è disponibile agli utenti autenticati.
+        </p>
+      </section>
+
+      <section>
+        <h2>Bacheca e digital signage</h2>
+        <p>
+          <strong>Dati:</strong> nome del docente o studente festeggiato, indicazione del tipo di
+          persona e, per lo studente, classe di appartenenza.
+        </p>
+        <p>
+          <strong>Finalità:</strong> distribuire i compleanni del giorno sulla bacheca e sui sistemi
+          di digital signage.
+        </p>
+        <p>
+          <strong>Accesso:</strong> oltre alla bacheca autenticata, è disponibile un feed RSS per
+          il software di segnaletica, protetto da un token statico configurato dal gestore.
+        </p>
+      </section>
+
+      <section>
+        <h2>Importazione dell’orario</h2>
+        <p>
+          <strong>Dati:</strong> nome del sistema sorgente e payload JSON ricevuto. Lo schema
+          accetta il contenuto del payload senza limitarlo a campi specifici, che devono quindi
+          essere definiti e verificati prima dell’uso in produzione.
+        </p>
+        <p>
+          <strong>Finalità:</strong> registrare l’importazione in attesa della conversione in eventi
+          ricorrenti dell’orario scolastico.
+        </p>
+        <p>
+          <strong>Accesso:</strong> il canale API di importazione è riservato soltanto agli
+          amministratori autenticati.
         </p>
       </section>
 
