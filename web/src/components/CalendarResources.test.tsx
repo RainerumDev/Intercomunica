@@ -164,6 +164,24 @@ describe("calendar subscription action", () => {
     }
   });
 
+  it("retries Google without an unhandled activation when the first navigation throws", async () => {
+    const open = vi.spyOn(window, "open")
+      .mockImplementationOnce(() => { throw new Error("navigation blocked"); })
+      .mockImplementation(() => null);
+    try {
+      await act(async () => renderActions());
+      const [alpha] = subscriptionButtons();
+
+      await act(async () => alpha.click());
+      await act(async () => alpha.click());
+
+      expect(open).toHaveBeenCalledTimes(2);
+      expect(container.querySelector('[role="dialog"]')).toBeNull();
+    } finally {
+      open.mockRestore();
+    }
+  });
+
   it("copies the HTTPS feed and presents an accessible manual fallback after the second activation", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });

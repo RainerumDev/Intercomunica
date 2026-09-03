@@ -33,8 +33,8 @@ function createSubscriptionController(): SubscriptionController {
     async activate(httpsUrl) {
       const canonicalUrl = canonicalHttpsUrl(httpsUrl);
       if (!attemptedFeeds.has(canonicalUrl)) {
-        attemptedFeeds.add(canonicalUrl);
         window.open(googleCalendarSubscribeUrl(canonicalUrl), "_blank", "noopener,noreferrer");
+        attemptedFeeds.add(canonicalUrl);
         return null;
       }
 
@@ -78,8 +78,12 @@ export function CalendarSubscriptionAction({ className, httpsUrl }: CalendarSubs
 
   async function activate() {
     triggerRef.current?.focus();
-    const fallback = await controller.activate(httpsUrl);
-    if (fallback) setManualFallback(fallback);
+    try {
+      const fallback = await controller.activate(httpsUrl);
+      if (fallback) setManualFallback(fallback);
+    } catch {
+      return;
+    }
   }
 
   function stopOuterDialogFromClosing(event: KeyboardEvent<HTMLDivElement>) {

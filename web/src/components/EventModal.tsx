@@ -143,7 +143,7 @@ export default function EventModal({
     form.title.trim() &&
     form.startsAt &&
     form.endsAt &&
-    (form.isGlobal || form.bachecaOnly || form.subgroupIds.length > 0);
+    (form.isGlobal || form.subgroupIds.length > 0);
   const showGeneralCalendarWarning =
     generalCalendarReadOnly && shouldWarnForReadOnlyCalendar(draft, form, isEdit);
   const linkedReadOnlyEvent =

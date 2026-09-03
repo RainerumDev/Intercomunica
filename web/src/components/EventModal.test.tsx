@@ -274,4 +274,19 @@ describe("EventModal audience selection", () => {
     await user.click(screen.getByRole("checkbox", { name: /Visibile a tutti/ }));
     expect((screen.getByRole("button", { name: "Salva" }) as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it("keeps saving disabled for a board-only event with an empty targeted audience", () => {
+    render(
+      <EventModal
+        draft={{ ...draft, isGlobal: false, bachecaOnly: true, subgroupIds: [] }}
+        subgroups={subgroups}
+        knownTags={[]}
+        onSaved={() => {}}
+        onDeleted={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    expect((screen.getByRole("button", { name: "Salva" }) as HTMLButtonElement).disabled).toBe(true);
+  });
 });
