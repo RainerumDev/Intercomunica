@@ -11,3 +11,4 @@ legacy-personal-calendars*.txt
 .claude/ralph-loop.local.md
 .worktrees/
 .superpowers/
+update.sh
