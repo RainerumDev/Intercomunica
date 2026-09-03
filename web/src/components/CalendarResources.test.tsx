@@ -252,6 +252,9 @@ describe("CalendarResources personal dialog", () => {
 
     expect(googleAction).toBeInstanceOf(HTMLButtonElement);
     expect(appFallback?.getAttribute("href")).toBe(links.personalWebcalUrl);
+    expect(dialog?.textContent).toContain(
+      "Apple Calendar: usa “Prova con un'altra app calendario” oppure aggiungi un nuovo calendario in abbonamento."
+    );
   });
 
   it("closes only the Google fallback dialog on Escape and returns focus to its action", async () => {

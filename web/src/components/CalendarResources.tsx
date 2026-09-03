@@ -215,7 +215,7 @@ export function CalendarResources({ links, onRotate, statusMessage }: CalendarRe
               </div>
               <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
                 <p><strong className="text-gray-800">Google Calendar:</strong> aggiungi un calendario “Da URL” e incolla l'indirizzo HTTPS.</p>
-                <p className="mt-1"><strong className="text-gray-800">Apple Calendar:</strong> usa “Apri nell'app Calendario” oppure aggiungi un nuovo calendario in abbonamento.</p>
+                <p className="mt-1"><strong className="text-gray-800">Apple Calendar:</strong> usa “Prova con un'altra app calendario” oppure aggiungi un nuovo calendario in abbonamento.</p>
                 <p className="mt-1"><strong className="text-gray-800">Outlook:</strong> aggiungi un calendario da Internet e incolla l'indirizzo HTTPS.</p>
               </div>
               <p className="text-sm text-gray-500">
