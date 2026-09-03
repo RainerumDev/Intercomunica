@@ -80,12 +80,20 @@ export default function EventModal({
     setForm((f) => ({ ...f, [key]: value }));
 
   const toggleSubgroup = (id: string) =>
-    set(
-      "subgroupIds",
-      form.subgroupIds.includes(id)
-        ? form.subgroupIds.filter((s) => s !== id)
-        : [...form.subgroupIds, id]
-    );
+    setForm((current) => ({
+      ...current,
+      isGlobal: false,
+      subgroupIds: current.subgroupIds.includes(id)
+        ? current.subgroupIds.filter((subgroupId) => subgroupId !== id)
+        : [...current.subgroupIds, id],
+    }));
+
+  const toggleGlobalAudience = (isGlobal: boolean) =>
+    setForm((current) => ({
+      ...current,
+      isGlobal,
+      subgroupIds: isGlobal ? [] : current.subgroupIds,
+    }));
 
   const addTag = (name: string) => {
     set("tagNames", commitPendingTag(form.tagNames, name));
@@ -219,7 +227,7 @@ export default function EventModal({
                 type="checkbox"
                 checked={form.isGlobal}
                 disabled={readOnly}
-                onChange={(e) => set("isGlobal", e.target.checked)}
+                onChange={(e) => toggleGlobalAudience(e.target.checked)}
               />
               🌍 Visibile a tutti
             </label>
@@ -268,6 +276,7 @@ export default function EventModal({
                           type="button"
                           onClick={() => !readOnly && toggleSubgroup(s.id)}
                           disabled={readOnly}
+                          aria-pressed={on}
                           className={`choice-chip${on ? " choice-chip--active" : ""}${readOnly && !on ? " opacity-50" : ""}`}
                         >
                           {s.name}
