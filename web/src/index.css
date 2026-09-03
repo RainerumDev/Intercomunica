@@ -943,6 +943,89 @@ button {
   box-shadow: var(--shadow-md);
 }
 
+.calendar-subscription-dialog {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.calendar-subscription-dialog__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgb(38 24 22 / 48%);
+}
+
+.calendar-subscription-dialog__panel {
+  position: relative;
+  display: grid;
+  width: min(100%, 32rem);
+  gap: 0.8rem;
+  padding: 1.4rem;
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.calendar-subscription-dialog__panel h2,
+.calendar-subscription-dialog__panel p {
+  margin: 0;
+}
+
+.calendar-subscription-dialog__panel p {
+  line-height: 1.5;
+}
+
+.calendar-subscription-dialog__panel label {
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.calendar-subscription-dialog__panel input {
+  width: 100%;
+  min-height: 2.7rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  background: white;
+}
+
+.calendar-subscription-dialog__panel a {
+  color: var(--focus);
+  font-weight: 750;
+}
+
+.calendar-subscription-dialog__close {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--ink);
+  background: var(--surface-soft);
+  font-size: 1.35rem;
+  cursor: pointer;
+}
+
+.calendar-subscription-dialog__status {
+  min-height: 1.2rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.calendar-subscription-dialog__webcal {
+  margin-top: 0.2rem;
+}
+
 /* FullCalendar inherits the portal contract while event colors retain data meaning. */
 .fc {
   --fc-border-color: var(--line);

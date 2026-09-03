@@ -2,8 +2,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CalendarResources, confirmRotation } from "./CalendarResources";
+import {
+  CalendarSubscriptionAction,
+  CalendarSubscriptionScope,
+  googleCalendarSubscribeUrl,
+  webcalUrl,
+} from "./CalendarSubscriptionAction";
 import type { CalendarLinks } from "../types";
 
 const links: CalendarLinks = {
@@ -104,7 +110,176 @@ describe("confirmRotation", () => {
   });
 });
 
+describe("calendar subscription URLs", () => {
+  const tokenizedFeed = "https://intercomunica.example/calendar/feed/mario-secret.ics?token=segreto&view=personale";
+
+  it("encodes the canonical HTTPS feed for Google and creates its webcal fallback", () => {
+    expect(googleCalendarSubscribeUrl(tokenizedFeed)).toBe(
+      "https://calendar.google.com/calendar/r?cid=https%3A%2F%2Fintercomunica.example%2Fcalendar%2Ffeed%2Fmario-secret.ics%3Ftoken%3Dsegreto%26view%3Dpersonale"
+    );
+    expect(webcalUrl(tokenizedFeed)).toBe(
+      "webcal://intercomunica.example/calendar/feed/mario-secret.ics?token=segreto&view=personale"
+    );
+  });
+});
+
+describe("calendar subscription action", () => {
+  const alphaFeed = "https://intercomunica.example/calendar/feed/mario-secret.ics?token=alpha&view=personale";
+  const betaFeed = "https://intercomunica.example/calendar/feed/anna-secret.ics?token=beta";
+  const actionName = "Aggiungi il calendario a Google Calendar";
+
+  function renderActions() {
+    return root.render(
+      <CalendarSubscriptionScope>
+        <CalendarSubscriptionAction httpsUrl={alphaFeed} />
+        <CalendarSubscriptionAction httpsUrl={betaFeed} />
+      </CalendarSubscriptionScope>
+    );
+  }
+
+  function subscriptionButtons(): HTMLButtonElement[] {
+    return Array.from(container.querySelectorAll("button")).filter(
+      (button) => button.getAttribute("aria-label") === actionName
+    ) as HTMLButtonElement[];
+  }
+
+  it("opens the encoded Google URL only on the first activation for each feed", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    try {
+      await act(async () => renderActions());
+      const [alpha, beta] = subscriptionButtons();
+
+      await act(async () => alpha.click());
+      await act(async () => beta.click());
+
+      expect(open).toHaveBeenCalledWith(
+        "https://calendar.google.com/calendar/r?cid=https%3A%2F%2Fintercomunica.example%2Fcalendar%2Ffeed%2Fmario-secret.ics%3Ftoken%3Dalpha%26view%3Dpersonale",
+        "_blank",
+        "noopener,noreferrer"
+      );
+      expect(open).toHaveBeenCalledTimes(2);
+      expect(container.querySelector('[role="dialog"]')).toBeNull();
+    } finally {
+      open.mockRestore();
+    }
+  });
+
+  it("copies the HTTPS feed and presents an accessible manual fallback after the second activation", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    vi.spyOn(window, "open").mockImplementation(() => null);
+    try {
+      await act(async () => renderActions());
+      const [alpha] = subscriptionButtons();
+
+      await act(async () => alpha.click());
+      await act(async () => alpha.click());
+
+      const dialog = container.querySelector('[role="dialog"]');
+      const input = container.querySelector('input[aria-label="URL del calendario"]');
+      const manualGoogle = Array.from(container.querySelectorAll("a")).find(
+        (link) => link.textContent === "Apri le impostazioni di Google Calendar"
+      );
+      const webcal = Array.from(container.querySelectorAll("a")).find(
+        (link) => link.textContent === "Prova con un'altra app calendario"
+      );
+
+      expect(writeText).toHaveBeenCalledWith(alphaFeed);
+      expect(dialog?.getAttribute("aria-modal")).toBe("true");
+      expect(input).toHaveProperty("value", alphaFeed);
+      expect(document.activeElement).toBe(input);
+      expect(manualGoogle?.getAttribute("href")).toBe("https://calendar.google.com/calendar/u/0/r/settings/addbyurl");
+      expect(manualGoogle?.getAttribute("rel")).toBe("noopener noreferrer");
+      expect(webcal?.getAttribute("href")).toBe("webcal://intercomunica.example/calendar/feed/mario-secret.ics?token=alpha&view=personale");
+      expect(container.querySelector('[role="status"]')?.textContent).toContain("Indirizzo copiato");
+
+      const close = dialog?.querySelector('button[aria-label="Chiudi"]');
+      if (!(close instanceof HTMLButtonElement) || !(webcal instanceof HTMLAnchorElement)) {
+        throw new Error("Manual fallback controls not found");
+      }
+      webcal.focus();
+      await act(async () => {
+        webcal.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+      });
+      expect(document.activeElement).toBe(close);
+      await act(async () => {
+        close.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }));
+      });
+      expect(document.activeElement).toBe(webcal);
+
+      await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+      expect(container.querySelector('[role="dialog"]')).toBeNull();
+      expect(document.activeElement).toBe(alpha);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("keeps the selectable manual fallback available when clipboard access is rejected", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+    });
+    vi.spyOn(window, "open").mockImplementation(() => null);
+    try {
+      await act(async () => renderActions());
+      const [alpha] = subscriptionButtons();
+
+      await act(async () => alpha.click());
+      await act(async () => alpha.click());
+
+      expect(container.querySelector('input[aria-label="URL del calendario"]')).toHaveProperty("value", alphaFeed);
+      expect(container.querySelector('[role="status"]')?.textContent).toContain("Non è stato possibile copiare");
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+});
+
 describe("CalendarResources personal dialog", () => {
+  it("offers Google subscription before the secondary calendar-app fallback", async () => {
+    await act(async () => {
+      root.render(<CalendarResources links={links} onRotate={async () => links} />);
+    });
+
+    await act(async () => buttonByText("Collega il mio calendario").click());
+
+    const dialog = container.querySelector('[role="dialog"]');
+    const googleAction = dialog?.querySelector('button[aria-label="Aggiungi il calendario a Google Calendar"]');
+    const appFallback = Array.from(dialog?.querySelectorAll("a") ?? []).find(
+      (link) => link.textContent === "Prova con un'altra app calendario"
+    );
+
+    expect(googleAction).toBeInstanceOf(HTMLButtonElement);
+    expect(appFallback?.getAttribute("href")).toBe(links.personalWebcalUrl);
+  });
+
+  it("closes only the Google fallback dialog on Escape and returns focus to its action", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    try {
+      await act(async () => {
+        root.render(<CalendarResources links={links} onRotate={async () => links} />);
+      });
+      await act(async () => buttonByText("Collega il mio calendario").click());
+      const googleAction = container.querySelector('button[aria-label="Aggiungi il calendario a Google Calendar"]');
+      if (!(googleAction instanceof HTMLButtonElement)) throw new Error("Google action not found");
+
+      await act(async () => googleAction.click());
+      await act(async () => googleAction.click());
+
+      const input = container.querySelector('input[aria-label="URL del calendario"]');
+      if (!(input instanceof HTMLInputElement)) throw new Error("Calendar URL input not found");
+      await act(async () => {
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      });
+
+      expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+      expect(document.activeElement).toBe(googleAction);
+    } finally {
+      open.mockRestore();
+    }
+  });
+
   it("keeps keyboard focus inside the dialog and restores the trigger for every close path", async () => {
     await act(async () => {
       root.render(<CalendarResources links={links} onRotate={async () => links} />);

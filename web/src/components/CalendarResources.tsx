@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { CalendarLinks } from "../types";
+import { CalendarSubscriptionAction, CalendarSubscriptionScope } from "./CalendarSubscriptionAction";
 
 interface CalendarResourcesProps {
   links: CalendarLinks;
@@ -101,7 +102,8 @@ export function CalendarResources({ links, onRotate, statusMessage }: CalendarRe
   );
 
   return (
-    <section aria-labelledby="calendar-resources-title" className="section-block">
+    <CalendarSubscriptionScope>
+      <section aria-labelledby="calendar-resources-title" className="section-block">
       <h2 id="calendar-resources-title" className="section-heading">
         Calendari
       </h2>
@@ -188,11 +190,15 @@ export function CalendarResources({ links, onRotate, statusMessage }: CalendarRe
             </div>
 
             <div className="mt-5 space-y-3">
+              <CalendarSubscriptionAction
+                className="button button--primary"
+                httpsUrl={links.personalIcsUrl!}
+              />
               <a
                 href={links.personalWebcalUrl!}
-                className="button button--primary"
+                className="button button--secondary"
               >
-                Apri nell'app Calendario
+                Prova con un'altra app calendario
               </a>
               <div>
                 <button
@@ -233,6 +239,7 @@ export function CalendarResources({ links, onRotate, statusMessage }: CalendarRe
           </div>
         </div>
       )}
-    </section>
+      </section>
+    </CalendarSubscriptionScope>
   );
 }
