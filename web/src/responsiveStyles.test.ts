@@ -32,6 +32,36 @@ function ruleDeclarations(selector: string): string {
   return ruleDeclarationsFrom(mobileCss, selector);
 }
 
+function propertyValue(declarations: string, property: string): string {
+  const escapedProperty = property.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const value = declarations.match(new RegExp(`${escapedProperty}:\\s*([^;]+)`, "u"))?.[1]?.trim();
+  if (!value) throw new Error(`Missing CSS property ${property}`);
+  return value;
+}
+
+function cascadedProperty(selector: string, property: string): string {
+  const sources = [css.slice(0, css.indexOf("@media (min-width: 1024px)")), mobileCss];
+  let value: string | null = null;
+  for (const source of sources) {
+    try {
+      value = propertyValue(ruleDeclarationsFrom(source, selector), property);
+    } catch {
+      // The selector or property can be inherited from the earlier cascade layer.
+    }
+  }
+  if (!value) throw new Error(`Missing cascaded CSS property ${property} for ${selector}`);
+  return value;
+}
+
+function evaluateViewportHeight(value: string, viewportHeight: number, safeAreaInset: number): number {
+  expect(value).toContain("100dvh");
+  expect(value).toContain("env(safe-area-inset-bottom)");
+
+  const fixedSubtractions = [...value.matchAll(/-\s*([\d.]+)(rem|px)/gu)]
+    .reduce((total, [, amount, unit]) => total + Number(amount) * (unit === "rem" ? 16 : 1), 0);
+  return viewportHeight - fixedSubtractions - safeAreaInset;
+}
+
 describe("mobile responsive controls", () => {
   it("gives Bacheca and Risorse search controls and event expansion 44px targets", () => {
     expect(ruleDeclarations(".search-control .form-control")).toContain("min-block-size: 44px");
@@ -54,17 +84,26 @@ describe("authenticated mobile shell", () => {
 });
 
 describe("responsive teacher directory", () => {
-  it("keeps a 14-letter, 44px alphabet rail reachable at common mobile heights", () => {
-    const commonMobileHeights = [568, 667];
-    const stickyOffset = 5.75 * 16;
+  it("keeps a 14-letter alphabet rail above the fixed navigation at common mobile heights", () => {
+    const commonMobileGeometries = [
+      { height: 568, safeAreaInset: 0 },
+      { height: 667, safeAreaInset: 34 },
+    ];
+    const stickyOffset = Number.parseFloat(cascadedProperty(".teacher-alphabet", "top")) * 16;
+    const navTargetHeight = Number.parseFloat(propertyValue(ruleDeclarations(".portal-nav__link"), "min-height"));
+    const navBorderHeight = Number.parseFloat(propertyValue(ruleDeclarations(".portal-nav"), "border-top"));
+    const maxHeight = cascadedProperty(".teacher-alphabet", "max-height");
+    const overflow = cascadedProperty(".teacher-alphabet", "overflow-y");
     const targetStackHeight = 14 * 44;
-    commonMobileHeights.forEach((height) => {
-      expect(targetStackHeight).toBeGreaterThan(height - stickyOffset);
-    });
 
-    const rail = ruleDeclarationsFrom(css, ".teacher-alphabet");
-    expect(rail).toContain("max-height: calc(100vh - 7rem)");
-    expect(rail).toContain("overflow-y: auto");
+    commonMobileGeometries.forEach(({ height, safeAreaInset }) => {
+      const railHeight = evaluateViewportHeight(maxHeight, height, safeAreaInset);
+      const fixedNavTop = height - navTargetHeight - navBorderHeight - safeAreaInset;
+      expect(stickyOffset + railHeight).toBeLessThanOrEqual(fixedNavTop);
+      expect(railHeight).toBeGreaterThanOrEqual(44);
+      expect(targetStackHeight).toBeGreaterThan(railHeight);
+    });
+    expect(overflow).toBe("auto");
 
     const targets = ruleDeclarationsFrom(css, ".teacher-alphabet a");
     expect(targets).toContain("min-width: 44px");
