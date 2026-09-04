@@ -30,6 +30,9 @@ async function subject() {
       | { kind: "ungrouped"; label: "Senza sottogruppo"; members: TMember[] }
     >;
     normalizeColorOverride: (value: string | null) => string | null;
+    subgroupSchoolLevel: (
+      subgroup: { name: string; folder?: string | null }
+    ) => "middle" | "upper" | null;
   };
 }
 
@@ -256,5 +259,16 @@ describe("subgroup presentation", () => {
     expect(normalizeColorOverride(null)).toBeNull();
     expect(normalizeColorOverride("  ")).toBeNull();
     expect(normalizeColorOverride("#1a2b3c")).toBe("#1A2B3C");
+  });
+
+  it("classifies school level from normalized subgroup folder and name labels", async () => {
+    const { subgroupSchoolLevel } = await subject();
+
+    expect(subgroupSchoolLevel({ name: "CDC 1À", folder: "Scuola Média" })).toBe("middle");
+    expect(subgroupSchoolLevel({ name: "CDC 5 Liceo", folder: "Consigli di Classe" })).toBe(
+      "upper"
+    );
+    expect(subgroupSchoolLevel({ name: "Docenti SUPERIORI", folder: null })).toBe("upper");
+    expect(subgroupSchoolLevel({ name: "Staff orientamento", folder: "Organizzazione" })).toBeNull();
   });
 });

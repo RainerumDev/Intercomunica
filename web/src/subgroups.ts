@@ -1,3 +1,5 @@
+import { normalizeSearchText } from "./search";
+
 export interface SubgroupRef {
   id: string;
   name: string;
@@ -136,6 +138,26 @@ export function sortMembers<T extends MemberRef>(values: readonly T[]): T[] {
     const label = italian.compare(firstLabel, secondLabel);
     return label !== 0 ? label : italian.compare(first.email, second.email);
   });
+}
+
+export type SubgroupSchoolLevel = "middle" | "upper";
+
+export function subgroupSchoolLevel(
+  subgroup: Pick<SubgroupRef, "name" | "folder">
+): SubgroupSchoolLevel | null {
+  const label = normalizeSearchText(`${subgroup.folder ?? ""} ${subgroup.name}`);
+  const words = new Set(label.split(/\s+/u));
+
+  if (words.has("media") || words.has("medie")) return "middle";
+  if (
+    words.has("superiore") ||
+    words.has("superiori") ||
+    words.has("liceo") ||
+    words.has("itt")
+  ) {
+    return "upper";
+  }
+  return null;
 }
 
 export function buildDirectorySections<
