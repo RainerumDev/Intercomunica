@@ -180,6 +180,31 @@ describe("admin resource routes", () => {
     expect(resourceOperations.createResource).not.toHaveBeenCalled();
   });
 
+  it("never exposes the internally discovered Open Graph image URL", async () => {
+    previewOperations.fetchLinkPreview.mockResolvedValue({
+      finalUrl: "https://example.org/guide",
+      title: "Guide",
+      description: "A useful guide",
+      imageUrl: "https://images.example.org/private-card.png",
+      siteName: "Example",
+    });
+
+    const response = await request(createApp())
+      .post("/api/admin/resources/preview")
+      .set("Cookie", adminCookie())
+      .send({ url: "https://example.org/guide" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      finalUrl: "https://example.org/guide",
+      title: "Guide",
+      description: "A useful guide",
+      imageUrl: null,
+      siteName: "Example",
+    });
+    expect(JSON.stringify(response.body)).not.toContain("images.example.org");
+  });
+
   it("rejects a malformed preview URL as invalid request data", async () => {
     const response = await request(createApp())
       .post("/api/admin/resources/preview")

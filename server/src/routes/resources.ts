@@ -80,7 +80,8 @@ resourcesRouter.post(
     if (!body) return;
 
     try {
-      res.json(await fetchLinkPreview(body.url));
+      const preview = await fetchLinkPreview(body.url);
+      res.json({ ...preview, imageUrl: null });
     } catch {
       res.status(422).json({ error: "Anteprima non disponibile" });
     }

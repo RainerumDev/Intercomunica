@@ -255,7 +255,7 @@ describe("fetchLinkPreview metadata extraction", () => {
       finalUrl: "https://example.org/article",
       title: "Open day 2026",
       description: "Programma e prenotazioni",
-      imageUrl: null,
+      imageUrl: "https://cdn.example.org/open-day.jpg",
       siteName: "Rainerum",
     });
   });
@@ -272,24 +272,26 @@ describe("fetchLinkPreview metadata extraction", () => {
     });
   });
 
-  it("does not expose external Open Graph images to the browser", async () => {
+  it("resolves relative Open Graph images against the validated final page URL", async () => {
     const dependencies = previewDependencies([
+      new Response(null, { status: 302, headers: { location: "/news/open-day" } }),
       new Response('<meta property="og:image" content="../images/open-day.jpg">', {
         headers: { "content-type": "text/html" },
       }),
     ]);
 
-    expect(await fetchLinkPreview("https://example.org/articles/open-day", dependencies)).toMatchObject({
-      imageUrl: null,
+    expect(await fetchLinkPreview("https://example.org/articles/draft", dependencies)).toMatchObject({
+      finalUrl: "https://example.org/news/open-day",
+      imageUrl: "https://example.org/images/open-day.jpg",
     });
   });
 
   it.each([
+    "   ",
     "data:image/png;base64,AAAA",
     "file:///etc/passwd",
     "ftp://images.example.org/open-day.jpg",
     "https://user:secret@images.example.org/open-day.jpg",
-    "http://127.0.0.1/private.png",
   ])("discards unsafe Open Graph image metadata %s", async (imageUrl) => {
     const dependencies = previewDependencies([
       new Response(`<meta property="og:image" content="${imageUrl}">`, {
@@ -302,7 +304,7 @@ describe("fetchLinkPreview metadata extraction", () => {
     });
   });
 
-  it("omits Open Graph images without resolving their attacker-controlled hostname", async () => {
+  it("keeps an HTTP Open Graph image as internal discovery data without resolving it", async () => {
     const lookup = vi.fn(async (hostname: string) => hostname === "images.example.org"
       ? [{ address: "10.0.0.8", family: 4 }]
       : PUBLIC_DNS_RESULT
@@ -314,7 +316,7 @@ describe("fetchLinkPreview metadata extraction", () => {
     ], lookup);
 
     await expect(fetchLinkPreview("https://example.org/article", dependencies)).resolves.toMatchObject({
-      imageUrl: null,
+      imageUrl: "https://images.example.org/private.png",
     });
     expect(lookup).toHaveBeenCalledTimes(1);
     expect(lookup).toHaveBeenCalledWith("example.org");

@@ -9,7 +9,7 @@ const MAX_HTML_BYTES = 1024 * 1024;
 const MAX_TITLE_LENGTH = 160;
 const MAX_DESCRIPTION_LENGTH = 500;
 const MAX_SITE_NAME_LENGTH = 160;
-const REQUEST_TIMEOUT_MS = 5000;
+export const PREVIEW_REQUEST_TIMEOUT_MS = 5000;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 export type LinkPreview = {
@@ -42,7 +42,7 @@ export class UnsafePreviewUrlError extends Error {
   }
 }
 
-const defaultDependencies: LinkPreviewDependencies = {
+export const defaultLinkPreviewDependencies: LinkPreviewDependencies = {
   lookup: async (hostname) => dnsLookup(hostname, { all: true, verbatim: true }),
   fetch: (url, init, validatedAddresses) => {
     if (!validatedAddresses) throw new Error("Validated preview addresses are required");
@@ -209,12 +209,12 @@ export function isPublicAddress(address: string): boolean {
   return false;
 }
 
-type ResolvedPublicHttpUrl = {
+export type ResolvedPublicHttpUrl = {
   url: URL;
   addresses: LinkPreviewLookupAddress[];
 };
 
-async function resolvePublicHttpUrl(
+export async function resolvePublicHttpUrl(
   value: string,
   lookup: LinkPreviewDependencies["lookup"],
   signal?: AbortSignal
@@ -260,7 +260,7 @@ function deadlineError(signal?: AbortSignal): Error {
   return new Error("Preview timed out");
 }
 
-function withDeadline<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+export function withDeadline<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return operation;
   if (signal.aborted) return Promise.reject(deadlineError(signal));
 
@@ -364,7 +364,28 @@ function attributesForTag(tag: string): Record<string, string> {
   return attributes;
 }
 
-function extractMetadata(html: string): Omit<LinkPreview, "finalUrl"> {
+function resolveImageUrl(raw: string | undefined, pageUrl: URL): string | null {
+  if (!raw) return null;
+
+  try {
+    const normalized = decodeHtmlEntities(raw).trim();
+    if (!normalized) return null;
+    const image = new URL(normalized, pageUrl);
+    if (
+      (image.protocol !== "http:" && image.protocol !== "https:") ||
+      image.username ||
+      image.password ||
+      image.toString().length > 2048
+    ) {
+      return null;
+    }
+    return image.toString();
+  } catch {
+    return null;
+  }
+}
+
+function extractMetadata(html: string, pageUrl: URL): Omit<LinkPreview, "finalUrl"> {
   const openGraph = new Map<string, string>();
   const metaTagPattern = /<meta\b(?:"[^"]*"|'[^']*'|[^'">])*>/gi;
 
@@ -385,23 +406,21 @@ function extractMetadata(html: string): Omit<LinkPreview, "finalUrl"> {
   return {
     title,
     description: normalizeMetadata(openGraph.get("og:description"), MAX_DESCRIPTION_LENGTH),
-    // Browser DNS cannot be pinned to the server-validated address, so never
-    // resolve or expose attacker-controlled og:image destinations.
-    imageUrl: null,
+    imageUrl: resolveImageUrl(openGraph.get("og:image"), pageUrl),
     siteName: normalizeMetadata(openGraph.get("og:site_name"), MAX_SITE_NAME_LENGTH),
   };
 }
 
 export async function fetchLinkPreview(
   value: string,
-  dependencies: LinkPreviewDependencies = defaultDependencies
+  dependencies: LinkPreviewDependencies = defaultLinkPreviewDependencies
 ): Promise<LinkPreview> {
   let currentUrl = value;
   let redirects = 0;
   const deadline = new AbortController();
   const timeout = setTimeout(
     () => deadline.abort(new Error("Preview timed out")),
-    dependencies.deadlineMs ?? REQUEST_TIMEOUT_MS
+    dependencies.deadlineMs ?? PREVIEW_REQUEST_TIMEOUT_MS
   );
   timeout.unref?.();
 
@@ -440,7 +459,7 @@ export async function fetchLinkPreview(
         const html = await readBoundedHtml(response, deadline.signal);
         return {
           finalUrl: validatedUrl.toString(),
-          ...extractMetadata(html),
+          ...extractMetadata(html, validatedUrl),
         };
       } finally {
         if (response.body && !response.body.locked) {
