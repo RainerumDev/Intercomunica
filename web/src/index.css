@@ -353,9 +353,22 @@ button {
   max-width: 56rem;
 }
 
+.page--bacheca {
+  width: min(100%, 68rem);
+  margin-inline: auto;
+}
+
 .page-heading-group {
   display: grid;
   gap: 0.4rem;
+}
+
+.page-heading-group__date {
+  margin: 0;
+  color: var(--brand);
+  font-size: 0.85rem;
+  font-weight: 750;
+  text-transform: capitalize;
 }
 
 .page-heading {
@@ -809,6 +822,120 @@ button {
 .event-card__description {
   color: var(--muted);
   font-size: 0.875rem;
+}
+
+.event-stream,
+.event-stream__sections,
+.event-stream__section,
+.event-stream__rows,
+.event-stream__controls {
+  display: grid;
+  gap: 1rem;
+}
+
+.event-stream__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.event-filter {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  gap: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.45rem 0.8rem;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.event-filter[aria-pressed="true"] {
+  border-color: var(--brand);
+  color: white;
+  background: var(--brand);
+}
+
+.event-filter__dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+}
+
+.event-row {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.event-row__date {
+  color: var(--brand);
+  font-size: 0.85rem;
+  font-weight: 750;
+  text-transform: capitalize;
+}
+
+.event-row__content {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.event-row__title,
+.event-row__details,
+.event-row__audience {
+  margin: 0;
+}
+
+.event-row__title {
+  font-size: 1.05rem;
+  line-height: 1.3;
+}
+
+.event-row__details,
+.event-row__audience {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.event-row__meta,
+.event-row__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.event-row__meta {
+  justify-content: space-between;
+  margin-top: 0.35rem;
+}
+
+.event-tag {
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  color: var(--ink);
+  background: var(--surface-soft);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.event-stream__more {
+  justify-self: start;
+}
+
+@media (min-width: 768px) {
+  .event-row {
+    grid-template-columns: 10rem minmax(0, 1fr);
+    align-items: start;
+    gap: 1.25rem;
+    padding: 1.15rem 1.25rem;
+  }
 }
 
 .resource-card {
