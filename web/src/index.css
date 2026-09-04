@@ -1150,6 +1150,200 @@ button {
   text-align: center;
 }
 
+.teacher-directory {
+  display: grid;
+  gap: 1rem;
+}
+
+.teacher-directory__scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.teacher-directory__scope {
+  min-height: 44px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 0.55rem 0.85rem;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 0.8125rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.teacher-directory__scope[aria-pressed="true"] {
+  border-color: var(--brand);
+  color: var(--brand-hover);
+  background: var(--surface-soft);
+}
+
+.teacher-directory__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: start;
+  gap: 0.5rem;
+}
+
+.teacher-directory__groups {
+  display: grid;
+  min-width: 0;
+  gap: 1.25rem;
+}
+
+.teacher-letter-group {
+  min-width: 0;
+  scroll-margin-top: 6.5rem;
+}
+
+.teacher-letter-group__heading {
+  margin: 0 0 0.35rem;
+  color: var(--brand-hover);
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+.teacher-letter-group__rows {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.teacher-contact-row {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  min-height: 64px;
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 0.65rem 0.75rem;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.teacher-contact-row:last-child {
+  border-bottom: 0;
+}
+
+.teacher-contact-row:hover,
+.teacher-contact-row[aria-pressed="true"] {
+  background: var(--surface-soft);
+}
+
+.teacher-contact-row[aria-pressed="true"] {
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+.teacher-contact-row__initials {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--brand-hover);
+  background: var(--surface-soft);
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.teacher-contact-row__text,
+.teacher-contact-row__name,
+.teacher-contact-row__secondary {
+  min-width: 0;
+}
+
+.teacher-contact-row__text {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.teacher-contact-row__name,
+.teacher-contact-row__secondary {
+  overflow-wrap: anywhere;
+}
+
+.teacher-contact-row__name {
+  font-size: 0.9375rem;
+  font-weight: 750;
+}
+
+.teacher-contact-row__secondary {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.teacher-alphabet {
+  position: sticky;
+  top: 5.75rem;
+  display: grid;
+  justify-items: stretch;
+}
+
+.teacher-alphabet a {
+  display: grid;
+  min-width: 44px;
+  min-height: 44px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--brand-hover);
+  font-size: 0.75rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.teacher-alphabet a:hover {
+  background: var(--surface-soft);
+}
+
+.teacher-detail {
+  min-width: 0;
+}
+
+.teacher-detail__eyebrow {
+  margin: 0 0 0.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.teacher-detail__title {
+  overflow-wrap: anywhere;
+}
+
+.teacher-detail__email {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+
+.teacher-detail__groups {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.teacher-detail__groups-title {
+  margin: 0 0 0.75rem;
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+.teacher-detail__groups button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
 @media (min-width: 1024px) {
   .directory-layout {
     display: grid;
@@ -1161,6 +1355,13 @@ button {
   .directory-layout--detail-open .directory-master,
   .directory-detail-pane {
     display: block;
+  }
+
+  .directory-detail-pane {
+    position: sticky;
+    top: 6.5rem;
+    max-height: calc(100vh - 7.5rem);
+    overflow-y: auto;
   }
 
   .directory-detail-pane__back {

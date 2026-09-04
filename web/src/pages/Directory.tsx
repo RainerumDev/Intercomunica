@@ -5,77 +5,19 @@ import { useAuth } from "../auth";
 import type { Member, Subgroup } from "../types";
 import DirectoryTabs from "../components/DirectoryTabs";
 import EmailComposer from "../components/EmailComposer";
-import MemberSubgroupCell from "../components/MemberSubgroupCell";
 import SubgroupChip from "../components/SubgroupChip";
 import SubgroupDetailsModal from "../components/SubgroupDetailsModal";
-import { buildDirectorySections, normalizeColorOverride, sortMembers, sortSubgroups } from "../subgroups";
+import TeacherDetail from "../components/TeacherDetail";
+import TeacherDirectory from "../components/TeacherDirectory";
+import { normalizeColorOverride, sortMembers, sortSubgroups } from "../subgroups";
 import { useDialogFocus } from "../components/useDialogFocus";
-import { parseDirectoryTab, type DirectoryTab } from "../directory";
-
-interface TeacherTableProps {
-  label: string;
-  members: Member[];
-  subgroups: Subgroup[];
-  isAdmin: boolean;
-  onAdd: (member: Member, subgroupId: string) => void;
-  onRemove: (member: Member, subgroupId: string) => void;
-  onInspect: (subgroupId: string) => void;
-  onSelect: (memberId: string, trigger: HTMLButtonElement) => void;
-  selectedMemberId: string | null;
-}
-
-function TeacherTable({
-  label,
-  members,
-  subgroups,
-  isAdmin,
-  onAdd,
-  onRemove,
-  onInspect,
-  onSelect,
-  selectedMemberId,
-}: TeacherTableProps) {
-  return (
-    <div className="table-shell directory-table-shell">
-      <table className="directory-table min-w-full text-sm" aria-label={label}>
-        <thead className="text-left">
-          <tr>
-            <th className="px-4 py-3 font-medium">Docente</th>
-            <th className="px-4 py-3 font-medium">Sottogruppi</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {members.map((member) => (
-            <tr key={member.id}>
-              <td className="px-4 py-3 whitespace-nowrap">
-                <button
-                  type="button"
-                  className="directory-selection-button"
-                  aria-label={`Mostra dettagli di ${member.name?.trim() || member.email}`}
-                  aria-pressed={selectedMemberId === member.id}
-                  onClick={(event) => onSelect(member.id, event.currentTarget)}
-                >
-                  <span className="font-medium text-gray-900">{member.name?.trim() || "—"}</span>
-                  <span className="text-gray-500">{member.email}</span>
-                </button>
-              </td>
-              <td className="px-4 py-3">
-                <MemberSubgroupCell
-                  member={member}
-                  allSubgroups={subgroups}
-                  isAdmin={isAdmin}
-                  onAdd={onAdd}
-                  onRemove={onRemove}
-                  onInspect={onInspect}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
+import {
+  filterTeachers,
+  groupTeachersAlphabetically,
+  parseDirectoryTab,
+  type DirectoryTab,
+  type TeacherScope,
+} from "../directory";
 
 export default function Directory() {
   const { me } = useAuth();
@@ -87,6 +29,7 @@ export default function Directory() {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [selectedSubgroupId, setSelectedSubgroupId] = useState<string | null>(null);
   const [teacherQuery, setTeacherQuery] = useState("");
+  const [teacherScope, setTeacherScope] = useState<TeacherScope>("all");
   const [groupQuery, setGroupQuery] = useState("");
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [emailTarget, setEmailTarget] = useState<Subgroup | null>(null);
@@ -98,7 +41,6 @@ export default function Directory() {
   const listScrollOffsetRef = useRef(0);
   const mobileDetailTriggerRef = useRef<HTMLButtonElement | null>(null);
   const mobileBackRef = useRef<HTMLButtonElement>(null);
-  const directoryTitleId = useId();
   const editDialogTitleId = useId();
   const editDialogRef = useDialogFocus({
     active: Boolean(editingSubgroup),
@@ -134,16 +76,15 @@ export default function Directory() {
     setMobileDetailOpen(false);
   }, [tab]);
 
-  const filtered = useMemo(() => {
-    const needle = teacherQuery.trim().toLowerCase();
-    if (!needle) return members;
-    return members.filter(
-      (m) =>
-        (m.name ?? "").toLowerCase().includes(needle) ||
-        m.email.toLowerCase().includes(needle) ||
-        m.subgroups.some((s) => s.name.toLowerCase().includes(needle))
-    );
-  }, [members, teacherQuery]);
+  const filtered = useMemo(
+    () => me ? filterTeachers(members, teacherQuery, teacherScope, me) : [],
+    [me, members, teacherQuery, teacherScope]
+  );
+
+  const groupedTeachers = useMemo(
+    () => groupTeachersAlphabetically(filtered),
+    [filtered]
+  );
 
   const filteredSubgroups = useMemo(() => {
     const needle = groupQuery.trim().toLowerCase();
@@ -161,12 +102,7 @@ export default function Directory() {
     return groups;
   }, [filteredSubgroups]);
 
-  const directorySections = useMemo(
-    () => buildDirectorySections(filtered, subgroups),
-    [filtered, subgroups]
-  );
-
-  const selectedMember = members.find(({ id }) => id === selectedMemberId) ?? null;
+  const selectedMember = filtered.find(({ id }) => id === selectedMemberId) ?? filtered[0] ?? null;
   const selectedSubgroupForPane = subgroups.find(({ id }) => id === selectedSubgroupId) ?? null;
 
   const openMobileDetail = (trigger: HTMLButtonElement) => {
@@ -410,9 +346,9 @@ export default function Directory() {
             className="directory-list-pane"
             data-testid={tab === "teachers" ? "directory-list-pane" : undefined}
           >
-            <section aria-labelledby={directoryTitleId}>
+            <section aria-labelledby="directory-teachers-title">
                 <div className="section-toolbar mb-3">
-                  <h2 id={directoryTitleId} className="section-heading">Docenti</h2>
+                  <h2 id="directory-teachers-title" className="section-heading">Docenti</h2>
                   <input
                     type="search"
                     aria-label="Cerca docenti"
@@ -422,41 +358,13 @@ export default function Directory() {
                     className="form-control"
                   />
                 </div>
-                {filtered.length === 0 ? (
-                  <p className="surface-card field-hint directory-empty">
-                    Nessun docente trovato. {members.length === 0 && "Esegui la sincronizzazione dalle Impostazioni."}
-                  </p>
-                ) : (
-                  <div className="directory-sections">
-                    {directorySections.map((section, sectionIndex) => {
-                      const sectionTitleId = `${directoryTitleId}-section-${sectionIndex}`;
-                      if (section.kind === "ungrouped") {
-                        return (
-                          <section key="ungrouped" aria-labelledby={sectionTitleId} className="directory-folder directory-folder--ungrouped">
-                            <h3 id={sectionTitleId} className="directory-folder__heading">{section.label}</h3>
-                            <TeacherTable label="Docenti senza sottogruppo" members={section.members} subgroups={subgroups} isAdmin={isAdmin} onAdd={addMembership} onRemove={removeMembership} onInspect={inspectSubgroup} onSelect={selectMember} selectedMemberId={selectedMemberId} />
-                          </section>
-                        );
-                      }
-                      return (
-                        <section key={section.label} aria-labelledby={sectionTitleId} className="directory-folder">
-                          <h3 id={sectionTitleId} className="directory-folder__heading">{section.label}</h3>
-                          <div className="directory-groups">
-                            {section.groups.map(({ subgroup, members: subgroupMembers }, groupIndex) => {
-                              const subgroupTitleId = `${sectionTitleId}-group-${groupIndex}`;
-                              return (
-                                <section key={subgroup.id} aria-labelledby={subgroupTitleId} className="directory-group">
-                                  <h4 id={subgroupTitleId} className="directory-group__heading">{subgroup.name}</h4>
-                                  <TeacherTable label={`Docenti di ${subgroup.name}`} members={subgroupMembers} subgroups={subgroups} isAdmin={isAdmin} onAdd={addMembership} onRemove={removeMembership} onInspect={inspectSubgroup} onSelect={selectMember} selectedMemberId={selectedMemberId} />
-                                </section>
-                              );
-                            })}
-                          </div>
-                        </section>
-                      );
-                    })}
-                  </div>
-                )}
+                <TeacherDirectory
+                  groups={groupedTeachers}
+                  selectedId={selectedMember?.id ?? null}
+                  scope={teacherScope}
+                  onScopeChange={setTeacherScope}
+                  onSelect={selectMember}
+                />
             </section>
           </div>
         </div>
@@ -466,10 +374,14 @@ export default function Directory() {
             {tab === "teachers" ? "Torna a tutti i docenti" : "Torna a tutti i gruppi"}
           </button>
           {tab === "teachers" && selectedMember ? (
-            <section className="surface-card surface-card--padded">
-              <h2 className="section-heading mb-3">{selectedMember.name?.trim() || selectedMember.email}</h2>
-              <TeacherTable label={`Dettaglio di ${selectedMember.name?.trim() || selectedMember.email}`} members={[selectedMember]} subgroups={subgroups} isAdmin={isAdmin} onAdd={addMembership} onRemove={removeMembership} onInspect={inspectSubgroup} onSelect={selectMember} selectedMemberId={selectedMemberId} />
-            </section>
+            <TeacherDetail
+              member={selectedMember}
+              isAdmin={isAdmin}
+              allSubgroups={subgroups}
+              onAdd={addMembership}
+              onRemove={removeMembership}
+              onInspect={inspectSubgroup}
+            />
           ) : tab === "groups" && selectedSubgroupForPane ? (
             <section className="surface-card surface-card--padded">
               <h2 className="section-heading mb-3">{selectedSubgroupForPane.name}</h2>

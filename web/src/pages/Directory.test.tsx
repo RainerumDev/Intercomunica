@@ -88,8 +88,8 @@ describe("Directory subgroup editor dialog", () => {
   });
 });
 
-describe("Directory teacher grouping", () => {
-  it("renders folder and subgroup sections with sorted repeated and ungrouped teachers", async () => {
+describe("Directory teacher contact book", () => {
+  it("renders each filtered teacher once in alphabetical groups", async () => {
     const subgroups: Subgroup[] = [
       {
         id: "class-10",
@@ -151,38 +151,73 @@ describe("Directory teacher grouping", () => {
       if (path === "/api/subgroups") return Promise.resolve(subgroups);
       throw new Error(`Unexpected GET ${path}`);
     }) as typeof api.get);
-
     renderDirectory();
 
     const directory = await screen.findByRole("region", { name: "Docenti" });
-    const headings = within(directory)
-      .getAllByRole("heading")
-      .map((heading) => heading.textContent);
-    expect(headings).toEqual([
+    expect(within(directory).getAllByRole("heading").map((heading) => heading.textContent)).toEqual([
       "Docenti",
-      "Classi",
-      "Classe 2",
-      "Classe 10",
-      "Dipartimenti",
-      "Ètica",
-      "Senza sottogruppo",
+      "B",
+      "C",
+      "Z",
+      "#",
     ]);
+    expect(within(directory).getAllByRole("button", { name: /Mostra dettagli di/ })).toHaveLength(4);
+    expect(within(directory).getAllByText("zeta@example.edu")).toHaveLength(1);
+    expect(within(directory).queryByRole("table")).toBeNull();
+  });
 
-    const classTwoRows = within(within(directory).getByRole("table", { name: "Docenti di Classe 2" }))
-      .getAllByRole("row")
-      .slice(1);
-    expect(classTwoRows.map((row) => within(row).getAllByRole("cell")[0].textContent)).toEqual([
-      "—anna@example.edu",
-      "Betabeta@example.edu",
-      "Zetazeta@example.edu",
-    ]);
+  it("applies controlled teacher scopes and falls back to the first remaining detail", async () => {
+    const user = userEvent.setup();
+    const middle: Subgroup = {
+      id: "middle-1",
+      name: "CDC 1A",
+      folder: "Docenti medie",
+      description: null,
+      color: null,
+      members: [],
+    };
+    const upper: Subgroup = {
+      id: "upper-1",
+      name: "CDC 5 Liceo",
+      folder: "Docenti superiori",
+      description: null,
+      color: null,
+      members: [],
+    };
+    const annalisa: Member = {
+      id: "annalisa",
+      email: "annalisa@example.edu",
+      name: "Annalisa",
+      role: "TEACHER",
+      subgroups: [middle],
+    };
+    const bruno: Member = {
+      id: "bruno",
+      email: "bruno@example.edu",
+      name: "Bruno",
+      role: "TEACHER",
+      subgroups: [upper],
+    };
+    vi.spyOn(api, "get").mockImplementation(((path: string) => {
+      if (path === "/api/users") return Promise.resolve([bruno, annalisa]);
+      if (path === "/api/subgroups") return Promise.resolve([upper, middle]);
+      throw new Error(`Unexpected GET ${path}`);
+    }) as typeof api.get);
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
 
-    const classTen = within(directory).getByRole("table", { name: "Docenti di Classe 10" });
-    expect(within(classTen).getByText("zeta@example.edu")).not.toBeNull();
-    expect(within(directory).getAllByText("zeta@example.edu")).toHaveLength(2);
+    renderDirectory();
+    await screen.findByRole("button", { name: "Mostra dettagli di Annalisa" });
+    expect(screen.getByTestId("directory-layout").classList.contains("directory-layout--detail-open")).toBe(false);
+    expect(screen.getByRole("heading", { name: "Annalisa" })).not.toBeNull();
 
-    const ungrouped = within(directory).getByRole("table", { name: "Docenti senza sottogruppo" });
-    expect(within(ungrouped).getByText("carlo@example.edu")).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Mostra dettagli di Bruno" }));
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" }));
+    expect(screen.getByRole("heading", { name: "Bruno" })).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Docenti medie" }));
+
+    expect(screen.queryByRole("button", { name: "Mostra dettagli di Bruno" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Mostra dettagli di Annalisa" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Annalisa" })).not.toBeNull();
   });
 });
 
@@ -295,10 +330,8 @@ describe("Directory shell state", () => {
     Object.defineProperty(window, "scrollY", { configurable: true, value: 216 });
     const listRow = screen.getByRole("button", { name: "Mostra dettagli di Docente" });
     await user.click(listRow);
-    const detailTable = screen.getByRole("table", { name: "Dettaglio di Docente" });
-
     Object.defineProperty(window, "scrollY", { configurable: true, value: 640 });
-    await user.click(within(detailTable).getByRole("button", { name: "Mostra dettagli di Docente" }));
+    await user.click(listRow);
     await user.click(screen.getByRole("button", { name: "Torna a tutti i docenti" }));
 
     await waitFor(() => expect(scrollTo).toHaveBeenLastCalledWith({ top: 216, behavior: "auto" }));
@@ -316,12 +349,13 @@ describe("Directory shell state", () => {
     renderDirectory("/directory?tab=groups");
     const search = await screen.findByRole("searchbox", { name: "Cerca gruppi" });
     await user.type(search, "uno");
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     await user.click(screen.getByRole("button", { name: "Mostra dettagli di Gruppo uno" }));
 
     expect(screen.getByTestId("directory-layout").classList.contains("directory-layout--detail-open")).toBe(true);
     expect(screen.getByRole("heading", { name: "Gruppo uno" })).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Torna a tutti i gruppi" }));
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledTimes(2));
 
     expect(screen.getByRole("searchbox", { name: "Cerca gruppi" }).getAttribute("value")).toBe("uno");
     expect(screen.getByTestId("directory-layout").classList.contains("directory-layout--detail-open")).toBe(false);

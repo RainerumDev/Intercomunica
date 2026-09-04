@@ -89,11 +89,21 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
       {sortSubgroups(member.subgroups).map((s) => (
         isAdmin ? (
           <SubgroupChip key={s.id} subgroup={s}>
-            {s.name}
+            {onInspect ? (
+              <button
+                type="button"
+                onClick={() => onInspect(s.id)}
+                aria-label={`Mostra i membri di ${s.name}`}
+                className="rounded-full font-medium focus:outline-none focus:ring-1 focus:ring-current"
+              >
+                {s.name}
+              </button>
+            ) : s.name}
             <button
               type="button"
               onClick={() => onRemove(member, s.id)}
               title={`Rimuovi da ${s.name}`}
+              aria-label={`Rimuovi da ${s.name}`}
               className="rounded-full leading-none opacity-70 hover:opacity-100 focus:outline-none focus:ring-1 focus:ring-current"
             >
               ×
@@ -107,8 +117,10 @@ export default function MemberSubgroupCell({ member, allSubgroups, isAdmin, onAd
       {isAdmin && (
         <button
           ref={btnRef}
+          type="button"
           onClick={() => setOpen((v) => !v)}
           title="Aggiungi a un sottogruppo"
+          aria-label="Aggiungi a un sottogruppo"
           className="text-action inline-flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-[var(--line-strong)] text-sm leading-none"
         >
           +
