@@ -18,12 +18,18 @@ function blockContents(source: string, marker: string): string {
 }
 
 const mobileCss = blockContents(css, "@media (max-width: 767px)");
+const desktopDirectoryCss = blockContents(css, "@media (min-width: 1024px)");
+
+function ruleDeclarationsFrom(source: string, selector: string): string {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const matches = [...source.matchAll(new RegExp(`(?:^|\\n)\\s*${escapedSelector}\\s*\\{([^}]*)\\}`, "gu"))];
+  const declarations = matches.at(-1)?.[1];
+  if (!declarations) throw new Error(`Missing CSS rule for ${selector}`);
+  return declarations;
+}
 
 function ruleDeclarations(selector: string): string {
-  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const match = mobileCss.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`, "u"));
-  if (!match?.[1]) throw new Error(`Missing CSS rule for ${selector}`);
-  return match[1];
+  return ruleDeclarationsFrom(mobileCss, selector);
 }
 
 describe("mobile responsive controls", () => {
@@ -44,5 +50,34 @@ describe("authenticated mobile shell", () => {
     const main = ruleDeclarations(".portal-main");
     expect(main).toContain("padding-bottom: 4rem");
     expect(main).not.toContain("5.5rem");
+  });
+});
+
+describe("responsive teacher directory", () => {
+  it("keeps a 14-letter, 44px alphabet rail reachable at common mobile heights", () => {
+    const commonMobileHeights = [568, 667];
+    const stickyOffset = 5.75 * 16;
+    const targetStackHeight = 14 * 44;
+    commonMobileHeights.forEach((height) => {
+      expect(targetStackHeight).toBeGreaterThan(height - stickyOffset);
+    });
+
+    const rail = ruleDeclarationsFrom(css, ".teacher-alphabet");
+    expect(rail).toContain("max-height: calc(100vh - 7rem)");
+    expect(rail).toContain("overflow-y: auto");
+
+    const targets = ruleDeclarationsFrom(css, ".teacher-alphabet a");
+    expect(targets).toContain("min-width: 44px");
+    expect(targets).toContain("min-height: 44px");
+
+    const body = ruleDeclarationsFrom(css, ".teacher-directory__body");
+    expect(body).toContain("grid-template-columns: minmax(0, 1fr) 44px");
+  });
+
+  it("lets a tall desktop teacher detail continue in normal document flow", () => {
+    const detail = ruleDeclarationsFrom(desktopDirectoryCss, ".directory-detail-pane");
+    expect(detail).not.toContain("position: sticky");
+    expect(detail).not.toContain("max-height:");
+    expect(detail).not.toContain("overflow-y: auto");
   });
 });

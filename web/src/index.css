@@ -1283,7 +1283,11 @@ button {
   position: sticky;
   top: 5.75rem;
   display: grid;
+  max-height: calc(100vh - 7rem);
+  overflow-y: auto;
   justify-items: stretch;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 .teacher-alphabet a {
@@ -1355,13 +1359,6 @@ button {
   .directory-layout--detail-open .directory-master,
   .directory-detail-pane {
     display: block;
-  }
-
-  .directory-detail-pane {
-    position: sticky;
-    top: 6.5rem;
-    max-height: calc(100vh - 7.5rem);
-    overflow-y: auto;
   }
 
   .directory-detail-pane__back {
