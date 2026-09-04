@@ -1,15 +1,21 @@
 import { once } from "node:events";
 import { lookup as osLookup } from "node:dns/promises";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
+import type { AddressInfo, Socket } from "node:net";
+import { Worker } from "node:worker_threads";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAbortableDnsLookup,
+  createBoundedDnsLookup,
+  createLookupWorkerTask,
   fetchLinkPreview,
   fetchUsingValidatedAddresses,
+  MAX_ACTIVE_PREVIEW_DNS_WORKERS,
+  MAX_QUEUED_PREVIEW_DNS_LOOKUPS,
   UnsafePreviewUrlError,
   type LinkPreviewDependencies,
   type LinkPreviewLookupTask,
+  type ScheduledLinkPreviewLookupTask,
 } from "./linkPreview.js";
 
 const PUBLIC_DNS_RESULT = [{ address: "93.184.216.34", family: 4 as const }];
@@ -67,14 +73,16 @@ describe("fetchLinkPreview security boundary", () => {
 
   it("rejects duplicate Content-Type headers in the pinned production transport", async () => {
     let socketClosed = false;
+    let serverSocket: Socket | undefined;
     const server = createServer((_request, response) => {
       response.writeHead(200, [
         "Content-Type", "image/png",
         "Content-Type", "text/html",
       ]);
-      response.end("ambiguous");
+      response.flushHeaders();
     });
     server.on("connection", (socket) => {
+      serverSocket = socket;
       socket.once("close", () => {
         socketClosed = true;
       });
@@ -91,6 +99,7 @@ describe("fetchLinkPreview security boundary", () => {
       )).rejects.toThrow(/content-type/i);
       await vi.waitFor(() => expect(socketClosed).toBe(true));
     } finally {
+      serverSocket?.destroy();
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
       });
@@ -99,15 +108,17 @@ describe("fetchLinkPreview security boundary", () => {
 
   it("rejects duplicate Content-Length headers and closes the pinned transport", async () => {
     let socketClosed = false;
+    let serverSocket: Socket | undefined;
     const server = createServer((_request, response) => {
       response.writeHead(200, [
         "Content-Type", "image/png",
         "Content-Length", "9",
         "Content-Length", "9",
       ]);
-      response.end("ambiguous");
+      response.flushHeaders();
     });
     server.on("connection", (socket) => {
+      serverSocket = socket;
       socket.once("close", () => {
         socketClosed = true;
       });
@@ -124,6 +135,7 @@ describe("fetchLinkPreview security boundary", () => {
       )).rejects.toThrow(/content-length|parse error/i);
       await vi.waitFor(() => expect(socketClosed).toBe(true));
     } finally {
+      serverSocket?.destroy();
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
       });
@@ -304,6 +316,18 @@ describe("fetchLinkPreview security boundary", () => {
     await expect(fetchLinkPreview("https://example.org", dependencies)).rejects.toThrow(/HTML/i);
   });
 
+  it("rejects a final HTML Content-Type with invalid parameter syntax", async () => {
+    const dependencies = previewDependencies([
+      new Response("<title>Must not parse</title>", {
+        headers: { "content-type": "text/html; invalid parameter" },
+      }),
+    ]);
+
+    await expect(fetchLinkPreview("https://example.org", dependencies)).rejects.toThrow(
+      /type|HTML/i
+    );
+  });
+
   it("rejects response bodies over 1 MiB", async () => {
     const dependencies = previewDependencies([
       new Response(new Uint8Array(1_048_577), {
@@ -389,7 +413,7 @@ describe("fetchLinkPreview security boundary", () => {
     }
   });
 
-  it("actively terminates the OS lookup task and waits for capacity release on abort", async () => {
+  it("actively cancels an injected lookup task and waits for capacity release", async () => {
     let activeTasks = 1;
     const task: LinkPreviewLookupTask = {
       result: new Promise(() => undefined),
@@ -408,15 +432,18 @@ describe("fetchLinkPreview security boundary", () => {
     expect(activeTasks).toBe(0);
   });
 
-  it("cannot return a late lookup result while abort cancellation is still releasing capacity", async () => {
+  it("stays pending until macrotask cancellation releases lookup capacity", async () => {
     let resolveResult: (addresses: typeof PUBLIC_DNS_RESULT) => void = () => undefined;
-    let releaseCapacity: () => void = () => undefined;
+    let capacityReleased = false;
     const task: LinkPreviewLookupTask = {
       result: new Promise((resolve) => {
         resolveResult = resolve;
       }),
       cancel: vi.fn(() => new Promise<void>((resolve) => {
-        releaseCapacity = resolve;
+        setTimeout(() => {
+          capacityReleased = true;
+          resolve();
+        }, 25);
       })),
     };
     const lookup = createAbortableDnsLookup(() => task);
@@ -430,19 +457,210 @@ describe("fetchLinkPreview security boundary", () => {
 
     deadline.abort(new Error("Preview timed out"));
     resolveResult(PUBLIC_DNS_RESULT);
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 5));
 
     expect(settled).toBe(false);
-    releaseCapacity();
     await expect(pending).rejects.toThrow(/timed out/i);
+    expect(capacityReleased).toBe(true);
     expect(task.cancel).toHaveBeenCalledOnce();
+  });
+
+  it("caps active OS lookup workers and the queue under 128 concurrent requests", async () => {
+    type ControlledTask = {
+      completeResult(): void;
+      finishWorker(): void;
+      task: ScheduledLinkPreviewLookupTask;
+    };
+    const controlledTasks: ControlledTask[] = [];
+    let activeWorkers = 0;
+    let maximumActiveWorkers = 0;
+    const lookup = createBoundedDnsLookup(() => {
+      activeWorkers++;
+      maximumActiveWorkers = Math.max(maximumActiveWorkers, activeWorkers);
+      let completeResult: (addresses: typeof PUBLIC_DNS_RESULT) => void = () => undefined;
+      let completeWorker: () => void = () => undefined;
+      let resultCompleted = false;
+      let workerFinished = false;
+      const task: ScheduledLinkPreviewLookupTask = {
+        result: new Promise((resolve) => {
+          completeResult = resolve;
+        }),
+        finished: new Promise((resolve) => {
+          completeWorker = resolve;
+        }),
+        cancel: vi.fn(),
+      };
+      controlledTasks.push({
+        task,
+        completeResult() {
+          if (resultCompleted) return;
+          resultCompleted = true;
+          completeResult(PUBLIC_DNS_RESULT);
+        },
+        finishWorker() {
+          if (workerFinished) return;
+          workerFinished = true;
+          activeWorkers--;
+          completeWorker();
+        },
+      });
+      return task;
+    });
+    const deadlines = Array.from({ length: 128 }, () => new AbortController());
+    const requests = deadlines.map((deadline, index) =>
+      lookup(`host-${index}.example`, deadline.signal)
+    );
+    const allOutcomes = Promise.allSettled(requests);
+    const acceptedCapacity =
+      MAX_ACTIVE_PREVIEW_DNS_WORKERS + MAX_QUEUED_PREVIEW_DNS_LOOKUPS;
+
+    expect(controlledTasks).toHaveLength(MAX_ACTIVE_PREVIEW_DNS_WORKERS);
+    expect(maximumActiveWorkers).toBe(MAX_ACTIVE_PREVIEW_DNS_WORKERS);
+    const overflow = await Promise.allSettled(requests.slice(acceptedCapacity));
+    expect(overflow).toHaveLength(128 - acceptedCapacity);
+    expect(overflow.every((outcome) =>
+      outcome.status === "rejected" && /queue is full/i.test(String(outcome.reason))
+    )).toBe(true);
+
+    deadlines[MAX_ACTIVE_PREVIEW_DNS_WORKERS].abort(new Error("Preview timed out"));
+    await expect(requests[MAX_ACTIVE_PREVIEW_DNS_WORKERS]).rejects.toThrow(/timed out/i);
+    expect(controlledTasks).toHaveLength(MAX_ACTIVE_PREVIEW_DNS_WORKERS);
+
+    const expectedWorkerCreations = acceptedCapacity - 1;
+    controlledTasks[0].completeResult();
+    await expect(requests[0]).resolves.toEqual(PUBLIC_DNS_RESULT);
+    expect(controlledTasks).toHaveLength(MAX_ACTIVE_PREVIEW_DNS_WORKERS);
+    controlledTasks[0].finishWorker();
+    for (let index = 0; index < expectedWorkerCreations; index++) {
+      await vi.waitFor(() => expect(controlledTasks.length).toBeGreaterThan(index));
+      controlledTasks[index].completeResult();
+      controlledTasks[index].finishWorker();
+    }
+
+    const outcomes = await allOutcomes;
+    expect(controlledTasks).toHaveLength(expectedWorkerCreations);
+    expect(maximumActiveWorkers).toBeLessThanOrEqual(MAX_ACTIVE_PREVIEW_DNS_WORKERS);
+    expect(activeWorkers).toBe(0);
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(
+      expectedWorkerCreations
+    );
+  });
+
+  it("retains an active scheduler slot until delayed cancellation completes", async () => {
+    const finishWorkers: Array<() => void> = [];
+    let tasksCreated = 0;
+    let cancellationReleased = false;
+    const lookup = createBoundedDnsLookup(() => {
+      const taskIndex = tasksCreated++;
+      let finishWorker: () => void = () => undefined;
+      const task: ScheduledLinkPreviewLookupTask = {
+        result: new Promise(() => undefined),
+        finished: new Promise((resolve) => {
+          finishWorker = resolve;
+        }),
+        cancel: taskIndex === 0
+          ? () => new Promise<void>((resolve) => setTimeout(() => {
+              cancellationReleased = true;
+              resolve();
+            }, 25))
+          : vi.fn(),
+      };
+      finishWorkers.push(finishWorker);
+      return task;
+    });
+    const deadlines = Array.from(
+      { length: MAX_ACTIVE_PREVIEW_DNS_WORKERS + 1 },
+      () => new AbortController()
+    );
+    const requests = deadlines.map((deadline, index) =>
+      lookup(`slot-${index}.example`, deadline.signal)
+    );
+    const observed = requests.map((request) => request.catch(() => undefined));
+
+    expect(tasksCreated).toBe(MAX_ACTIVE_PREVIEW_DNS_WORKERS);
+    deadlines[0].abort(new Error("Preview timed out"));
+    finishWorkers[0]();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(cancellationReleased).toBe(false);
+    expect(tasksCreated).toBe(MAX_ACTIVE_PREVIEW_DNS_WORKERS);
+    await expect(requests[0]).rejects.toThrow(/timed out/i);
+    await vi.waitFor(() => expect(tasksCreated).toBe(MAX_ACTIVE_PREVIEW_DNS_WORKERS + 1));
+
+    for (const finishWorker of finishWorkers.slice(1)) finishWorker();
+    for (const deadline of deadlines.slice(1)) deadline.abort(new Error("cleanup"));
+    await Promise.all(observed);
   });
 
   it("matches node:dns.lookup system resolver results and ordering", async () => {
     const expected = await osLookup("localhost", { all: true });
 
     await expect(createAbortableDnsLookup()("localhost")).resolves.toEqual(expected);
+  });
+
+  it("terminates an actual production lookup Worker on abort and releases its scheduler slot", async () => {
+    const lookup = createAbortableDnsLookup();
+    const deadline = new AbortController();
+    const pending = lookup("localhost", deadline.signal);
+
+    deadline.abort(new Error("Preview timed out"));
+
+    await expect(pending).rejects.toThrow(/timed out/i);
+    await expect(lookup("localhost")).resolves.toEqual(
+      await osLookup("localhost", { all: true })
+    );
+  });
+
+  it("preserves an empty result at the abortable resolver abstraction", async () => {
+    const task: LinkPreviewLookupTask = {
+      result: Promise.resolve([]),
+      cancel: vi.fn(),
+    };
+
+    await expect(createAbortableDnsLookup(() => task)("empty.example")).resolves.toEqual([]);
+  });
+
+  it.each([
+    null,
+    {},
+    { ok: "true", addresses: [] },
+    { ok: true, addresses: null },
+    { ok: true, addresses: [{ address: "93.184.216.34", family: "4" }] },
+    { ok: true, addresses: [{ address: "not-an-address", family: 4 }] },
+    { ok: true, addresses: [{ address: "93.184.216.34", family: 6 }] },
+    { ok: false, error: { message: "missing name" } },
+    { ok: false, error: { name: "Error", message: 42 } },
+  ])("rejects and terminates a Worker that sends malformed lookup message %#", async (message) => {
+    const worker = new Worker(`
+      const { parentPort, workerData } = require("node:worker_threads");
+      parentPort.postMessage(workerData.message);
+      setInterval(() => undefined, 1000);
+    `, {
+      eval: true,
+      workerData: { message },
+    });
+    const task = createLookupWorkerTask(worker);
+
+    await expect(task.result).rejects.toThrow(/invalid message/i);
+    await expect(task.finished).resolves.toBeUndefined();
+  });
+
+  it("reconstructs a fully validated lookup error from a Worker message", async () => {
+    const worker = new Worker(`
+      const { parentPort } = require("node:worker_threads");
+      parentPort.postMessage({
+        ok: false,
+        error: { name: "ResolverError", message: "host not found", code: "ENOTFOUND" },
+      });
+    `, { eval: true });
+    const task = createLookupWorkerTask(worker);
+
+    await expect(task.result).rejects.toMatchObject({
+      name: "ResolverError",
+      message: "host not found",
+      code: "ENOTFOUND",
+    });
+    await expect(task.finished).resolves.toBeUndefined();
   });
 
   it.each([

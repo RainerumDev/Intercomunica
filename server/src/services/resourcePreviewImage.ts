@@ -1,8 +1,8 @@
-import { MIMEType } from "node:util";
 import {
   defaultLinkPreviewDependencies,
   fetchLinkPreview,
   PREVIEW_REQUEST_TIMEOUT_MS,
+  parseStrictContentType,
   resolvePublicHttpUrl,
   throwIfPreviewDeadlineElapsed,
   withDeadline,
@@ -33,18 +33,10 @@ export type ResourcePreviewResult = {
 function imageMimeType(response: Response): string {
   const contentType = response.headers.get("content-type");
   if (!contentType) throw new Error("Preview image type is missing");
-  const token = "[!#$%&'*+\\-.^_`|~0-9A-Za-z]+";
-  const quotedValue = '"(?:[\\t\\x20-\\x21\\x23-\\x5b\\x5d-\\x7e]|\\\\[\\t\\x20-\\x7e])*"';
-  const parameterSyntax = new RegExp(
-    `^\\s*${token}/${token}(?:\\s*;\\s*${token}\\s*=\\s*(?:${token}|${quotedValue}))*\\s*$`
-  );
-  if (contentType.length > 256 || !parameterSyntax.test(contentType)) {
-    throw new Error("Preview image type is invalid");
-  }
 
   let mimeType: string;
   try {
-    mimeType = new MIMEType(contentType).essence.toLowerCase();
+    mimeType = parseStrictContentType(contentType);
   } catch {
     throw new Error("Preview image type is invalid");
   }

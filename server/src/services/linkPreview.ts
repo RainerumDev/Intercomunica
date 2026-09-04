@@ -2,6 +2,7 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP, type LookupFunction } from "node:net";
 import { Readable } from "node:stream";
+import { MIMEType } from "node:util";
 import { Worker } from "node:worker_threads";
 
 const MAX_REDIRECTS = 3;
@@ -10,7 +11,16 @@ const MAX_TITLE_LENGTH = 160;
 const MAX_DESCRIPTION_LENGTH = 500;
 const MAX_SITE_NAME_LENGTH = 160;
 export const PREVIEW_REQUEST_TIMEOUT_MS = 5000;
+// DNS lookups use one Worker each. These module-wide production limits prevent
+// request bursts from creating an unbounded number of threads or queued jobs.
+export const MAX_ACTIVE_PREVIEW_DNS_WORKERS = 6;
+export const MAX_QUEUED_PREVIEW_DNS_LOOKUPS = 24;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const MIME_TOKEN = "[!#$%&'*+\\-.^_`|~0-9A-Za-z]+";
+const MIME_QUOTED_VALUE = '"(?:[\\t\\x20-\\x21\\x23-\\x5b\\x5d-\\x7e]|\\\\[\\t\\x20-\\x7e])*"';
+const STRICT_MIME_SYNTAX = new RegExp(
+  `^\\s*${MIME_TOKEN}/${MIME_TOKEN}(?:\\s*;\\s*${MIME_TOKEN}\\s*=\\s*(?:${MIME_TOKEN}|${MIME_QUOTED_VALUE}))*\\s*$`
+);
 
 export type LinkPreview = {
   finalUrl: string;
@@ -30,6 +40,10 @@ export type LinkPreviewLookupTask = {
   cancel(): Promise<unknown> | unknown;
 };
 
+export type ScheduledLinkPreviewLookupTask = LinkPreviewLookupTask & {
+  finished: Promise<void>;
+};
+
 export type LinkPreviewDependencies = {
   deadlineMs?: number;
   lookup: (hostname: string, signal?: AbortSignal) => Promise<LinkPreviewLookupAddress[]>;
@@ -47,6 +61,18 @@ export class UnsafePreviewUrlError extends Error {
   }
 }
 
+export function parseStrictContentType(value: string): string {
+  if (value.length > 256 || !STRICT_MIME_SYNTAX.test(value)) {
+    throw new Error("Preview Content-Type is invalid");
+  }
+
+  try {
+    return new MIMEType(value).essence.toLowerCase();
+  } catch {
+    throw new Error("Preview Content-Type is invalid");
+  }
+}
+
 const OS_LOOKUP_WORKER_SOURCE = `
 const { lookup } = require("node:dns");
 const { parentPort, workerData } = require("node:worker_threads");
@@ -55,7 +81,7 @@ lookup(workerData.hostname, { all: true }, (error, addresses) => {
   if (error) {
     parentPort.postMessage({
       ok: false,
-      error: { message: error.message, code: error.code },
+      error: { name: error.name, message: error.message, code: error.code },
     });
     return;
   }
@@ -65,100 +91,293 @@ lookup(workerData.hostname, { all: true }, (error, addresses) => {
 
 type LookupWorkerMessage =
   | { ok: true; addresses: LinkPreviewLookupAddress[] }
-  | { ok: false; error: { message: string; code?: string } };
+  | { ok: false; error: { name: string; message: string; code?: string } };
 
-function createOsLookupTask(hostname: string): LinkPreviewLookupTask {
-  const worker = new Worker(OS_LOOKUP_WORKER_SOURCE, {
-    eval: true,
-    workerData: { hostname },
-  });
-  let completed = false;
+function invalidLookupWorkerMessage(): Error {
+  return new Error("Preview DNS lookup Worker returned an invalid message");
+}
+
+function parseLookupWorkerMessage(message: unknown): LookupWorkerMessage {
+  if (typeof message !== "object" || message === null || Array.isArray(message)) {
+    throw invalidLookupWorkerMessage();
+  }
+  const record = message as Record<string, unknown>;
+
+  if (record.ok === true) {
+    if (!Array.isArray(record.addresses)) throw invalidLookupWorkerMessage();
+    const addresses = record.addresses.map((entry): LinkPreviewLookupAddress => {
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+        throw invalidLookupWorkerMessage();
+      }
+      const address = (entry as Record<string, unknown>).address;
+      const family = (entry as Record<string, unknown>).family;
+      if (
+        typeof address !== "string" ||
+        (family !== 4 && family !== 6) ||
+        isIP(address) !== family
+      ) {
+        throw invalidLookupWorkerMessage();
+      }
+      return { address, family };
+    });
+    return { ok: true, addresses };
+  }
+
+  if (record.ok === false) {
+    if (typeof record.error !== "object" || record.error === null || Array.isArray(record.error)) {
+      throw invalidLookupWorkerMessage();
+    }
+    const errorRecord = record.error as Record<string, unknown>;
+    if (
+      typeof errorRecord.name !== "string" ||
+      !errorRecord.name ||
+      typeof errorRecord.message !== "string" ||
+      (errorRecord.code !== undefined && typeof errorRecord.code !== "string")
+    ) {
+      throw invalidLookupWorkerMessage();
+    }
+    return {
+      ok: false,
+      error: {
+        name: errorRecord.name,
+        message: errorRecord.message,
+        ...(errorRecord.code === undefined ? {} : { code: errorRecord.code }),
+      },
+    };
+  }
+
+  throw invalidLookupWorkerMessage();
+}
+
+export function createLookupWorkerTask(worker: Worker): ScheduledLinkPreviewLookupTask {
+  let resultCompleted = false;
+  let rejectResult: (error: Error) => void = () => undefined;
+  let finishWorker: () => void = () => undefined;
+  let termination: Promise<unknown> | undefined;
+  const terminate = () => {
+    termination ??= Promise.resolve().then(() => worker.terminate());
+    return termination;
+  };
 
   const result = new Promise<LinkPreviewLookupAddress[]>((resolve, reject) => {
-    const cleanup = () => {
-      worker.off("message", receive);
-      worker.off("error", fail);
-      worker.off("exit", exit);
-    };
-    const receive = (message: LookupWorkerMessage) => {
-      completed = true;
-      cleanup();
-      if (!message.ok) {
-        const error = new Error(message.error.message) as NodeJS.ErrnoException;
-        error.code = message.error.code;
-        reject(error);
-        return;
+    rejectResult = reject;
+    const receive = (untrustedMessage: unknown) => {
+      try {
+        const message = parseLookupWorkerMessage(untrustedMessage);
+        resultCompleted = true;
+        if (!message.ok) {
+          const error = new Error(message.error.message) as NodeJS.ErrnoException;
+          error.name = message.error.name;
+          error.code = message.error.code;
+          reject(error);
+          return;
+        }
+        resolve(message.addresses);
+      } catch (error) {
+        resultCompleted = true;
+        reject(error instanceof Error ? error : invalidLookupWorkerMessage());
+        void terminate().catch(() => undefined);
       }
-      resolve(message.addresses);
     };
     const fail = (error: Error) => {
-      completed = true;
-      cleanup();
+      if (resultCompleted) return;
+      resultCompleted = true;
       reject(error);
     };
     const exit = (code: number) => {
-      if (completed) return;
-      completed = true;
-      cleanup();
-      reject(new Error(`Preview DNS lookup worker exited with code ${code}`));
+      worker.off("message", receive);
+      worker.off("error", fail);
+      worker.off("exit", exit);
+      if (!resultCompleted) {
+        resultCompleted = true;
+        rejectResult(new Error(`Preview DNS lookup Worker exited with code ${code}`));
+      }
+      finishWorker();
     };
 
     worker.once("message", receive);
     worker.once("error", fail);
     worker.once("exit", exit);
   });
+  const finished = new Promise<void>((resolve) => {
+    finishWorker = resolve;
+  });
 
-  return {
-    result,
-    cancel: () => worker.terminate(),
-  };
+  return { result, finished, cancel: terminate };
 }
 
+function createOsLookupTask(hostname: string): ScheduledLinkPreviewLookupTask {
+  const worker = new Worker(OS_LOOKUP_WORKER_SOURCE, {
+    eval: true,
+    workerData: { hostname },
+  });
+  return createLookupWorkerTask(worker);
+}
+
+type LinkPreviewLookupTaskProvider = (
+  hostname: string,
+  signal?: AbortSignal
+) => LinkPreviewLookupTask | Promise<LinkPreviewLookupTask>;
+
 export function createAbortableDnsLookup(
-  createTask: (hostname: string) => LinkPreviewLookupTask = createOsLookupTask
+  createTask?: LinkPreviewLookupTaskProvider
 ): LinkPreviewDependencies["lookup"] {
+  if (!createTask) return productionDnsLookup;
+
   return async (hostname, signal) => {
     if (signal?.aborted) throw deadlineError(signal);
 
-    const task = createTask(hostname);
-    const result = task.result.then(
-      (addresses) => {
-        if (signal?.aborted) throw deadlineError(signal);
-        return addresses;
-      },
-      (error: unknown) => {
-        if (signal?.aborted) throw deadlineError(signal);
-        throw error;
-      }
+    const task = await createTask(hostname, signal);
+    type TaskOutcome =
+      | { kind: "success"; addresses: LinkPreviewLookupAddress[] }
+      | { kind: "failure"; error: unknown };
+    type LookupOutcome = TaskOutcome | { kind: "abort" };
+    const result: Promise<TaskOutcome> = task.result.then(
+      (addresses) => ({ kind: "success", addresses }),
+      (error: unknown) => ({ kind: "failure", error })
     );
-    if (!signal) return result;
+    if (signal?.aborted) {
+      await Promise.resolve().then(() => task.cancel()).catch(() => undefined);
+      throw deadlineError(signal);
+    }
+    if (!signal) {
+      const outcome = await result;
+      if (outcome.kind === "failure") throw outcome.error;
+      return outcome.addresses;
+    }
 
-    let rejectCancellation: (error: Error) => void = () => undefined;
-    const cancellation = new Promise<never>((_resolve, reject) => {
-      rejectCancellation = reject;
+    let notifyAbort: () => void = () => undefined;
+    const aborted = new Promise<LookupOutcome>((resolve) => {
+      notifyAbort = () => resolve({ kind: "abort" });
     });
-    let cancellationStarted = false;
-    const cancel = () => {
-      if (cancellationStarted) return;
-      cancellationStarted = true;
-      Promise.resolve().then(() => task.cancel()).then(
-        () => rejectCancellation(deadlineError(signal)),
-        () => rejectCancellation(deadlineError(signal))
-      );
+    let cancellationCompletion: Promise<void> | undefined;
+    const beginCancellation = () => {
+      cancellationCompletion ??= Promise.resolve()
+        .then(() => task.cancel())
+        .then(() => undefined, () => undefined);
+      notifyAbort();
+      return cancellationCompletion;
     };
-    signal.addEventListener("abort", cancel, { once: true });
-    if (signal.aborted) cancel();
+    signal.addEventListener("abort", beginCancellation, { once: true });
+    if (signal.aborted) beginCancellation();
 
     try {
-      return await Promise.race([result, cancellation]);
+      const outcome = await Promise.race([result, aborted]);
+      if (outcome.kind === "abort") {
+        await beginCancellation();
+        throw deadlineError(signal);
+      }
+      if (signal.aborted) {
+        await beginCancellation();
+        throw deadlineError(signal);
+      }
+      if (outcome.kind === "failure") throw outcome.error;
+      return outcome.addresses;
     } finally {
-      signal.removeEventListener("abort", cancel);
+      signal.removeEventListener("abort", beginCancellation);
     }
   };
 }
 
+export function createBoundedDnsLookup(
+  createTask: (hostname: string) => ScheduledLinkPreviewLookupTask
+): LinkPreviewDependencies["lookup"] {
+  type QueueEntry = {
+    hostname: string;
+    signal?: AbortSignal;
+    resolve(task: LinkPreviewLookupTask): void;
+    reject(error: Error): void;
+    abort(): void;
+  };
+
+  let activeWorkers = 0;
+  const queue: QueueEntry[] = [];
+
+  const drain = () => {
+    while (activeWorkers < MAX_ACTIVE_PREVIEW_DNS_WORKERS && queue.length > 0) {
+      const entry = queue.shift();
+      if (!entry) return;
+      entry.signal?.removeEventListener("abort", entry.abort);
+      if (entry.signal?.aborted) {
+        entry.reject(deadlineError(entry.signal));
+        continue;
+      }
+
+      activeWorkers++;
+      let task: ScheduledLinkPreviewLookupTask;
+      try {
+        task = createTask(entry.hostname);
+      } catch (error) {
+        activeWorkers--;
+        entry.reject(error instanceof Error ? error : new Error("Preview DNS lookup failed"));
+        continue;
+      }
+
+      let cancellationCompletion: Promise<unknown> | undefined;
+      const scheduledTask: LinkPreviewLookupTask = {
+        result: task.result,
+        cancel: () => {
+          cancellationCompletion ??= Promise.resolve().then(() => task.cancel());
+          return cancellationCompletion;
+        },
+      };
+      const cancelActiveTask = () => {
+        void Promise.resolve(scheduledTask.cancel()).catch(() => undefined);
+      };
+      entry.signal?.addEventListener("abort", cancelActiveTask, { once: true });
+      if (entry.signal?.aborted) cancelActiveTask();
+      const releaseSlot = async () => {
+        entry.signal?.removeEventListener("abort", cancelActiveTask);
+        if (cancellationCompletion) {
+          await cancellationCompletion.catch(() => undefined);
+        }
+        activeWorkers--;
+        drain();
+      };
+      void task.finished.then(releaseSlot, releaseSlot).catch(() => undefined);
+      entry.resolve(scheduledTask);
+    }
+  };
+
+  const acquireTask: LinkPreviewLookupTaskProvider = (hostname, signal) =>
+    new Promise<LinkPreviewLookupTask>((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(deadlineError(signal));
+        return;
+      }
+      if (
+        activeWorkers >= MAX_ACTIVE_PREVIEW_DNS_WORKERS &&
+        queue.length >= MAX_QUEUED_PREVIEW_DNS_LOOKUPS
+      ) {
+        reject(new Error("Preview DNS lookup queue is full"));
+        return;
+      }
+
+      const entry: QueueEntry = {
+        hostname,
+        signal,
+        resolve,
+        reject,
+        abort: () => {
+          const index = queue.indexOf(entry);
+          if (index === -1) return;
+          queue.splice(index, 1);
+          signal?.removeEventListener("abort", entry.abort);
+          reject(deadlineError(signal));
+        },
+      };
+      queue.push(entry);
+      signal?.addEventListener("abort", entry.abort, { once: true });
+      drain();
+    });
+
+  return createAbortableDnsLookup(acquireTask);
+}
+
+const productionDnsLookup = createBoundedDnsLookup(createOsLookupTask);
+
 export const defaultLinkPreviewDependencies: LinkPreviewDependencies = {
-  lookup: createAbortableDnsLookup(),
+  lookup: productionDnsLookup,
   fetch: (url, init, validatedAddresses) => {
     if (!validatedAddresses) throw new Error("Validated preview addresses are required");
     return fetchUsingValidatedAddresses(url, init, validatedAddresses);
@@ -588,10 +807,15 @@ export async function fetchLinkPreview(
         }
 
         if (!response.ok) throw new Error(`Preview request failed with status ${response.status}`);
-        const contentType = response.headers.get("content-type")
-          ?.split(";", 1)[0]
-          .trim()
-          .toLowerCase();
+        const rawContentType = response.headers.get("content-type");
+        let contentType: string | undefined;
+        if (rawContentType) {
+          try {
+            contentType = parseStrictContentType(rawContentType);
+          } catch {
+            throw new Error("Preview response HTML type is invalid");
+          }
+        }
         if (contentType !== "text/html" && contentType !== "application/xhtml+xml") {
           throw new Error("Preview response is not HTML");
         }
