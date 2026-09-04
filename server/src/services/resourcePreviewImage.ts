@@ -4,6 +4,7 @@ import {
   fetchLinkPreview,
   PREVIEW_REQUEST_TIMEOUT_MS,
   resolvePublicHttpUrl,
+  throwIfPreviewDeadlineElapsed,
   withDeadline,
   type LinkPreview,
   type LinkPreviewDependencies,
@@ -76,7 +77,7 @@ async function readBoundedImage(response: Response, signal: AbortSignal): Promis
 
   try {
     while (true) {
-      const { done, value } = await withDeadline(reader.read(), signal);
+      const { done, value } = await withDeadline(() => reader.read(), signal);
       if (done) break;
       bytesRead += value.byteLength;
       if (bytesRead > MAX_PREVIEW_IMAGE_BYTES) {
@@ -109,13 +110,14 @@ export async function fetchPublicImage(
 
   try {
     while (true) {
+      throwIfPreviewDeadlineElapsed(deadline.signal);
       const { url: validatedUrl, addresses } = await resolvePublicHttpUrl(
         currentUrl,
         dependencies.lookup,
         deadline.signal
       );
       const response = await withDeadline(
-        dependencies.fetch(
+        () => dependencies.fetch(
           validatedUrl.toString(),
           {
             redirect: "manual",

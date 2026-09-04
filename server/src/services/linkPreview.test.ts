@@ -1,4 +1,5 @@
 import { once } from "node:events";
+import { lookup as osLookup } from "node:dns/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -8,7 +9,7 @@ import {
   fetchUsingValidatedAddresses,
   UnsafePreviewUrlError,
   type LinkPreviewDependencies,
-  type LinkPreviewDnsResolver,
+  type LinkPreviewLookupTask,
 } from "./linkPreview.js";
 
 const PUBLIC_DNS_RESULT = [{ address: "93.184.216.34", family: 4 as const }];
@@ -65,12 +66,18 @@ describe("fetchLinkPreview security boundary", () => {
   });
 
   it("rejects duplicate Content-Type headers in the pinned production transport", async () => {
+    let socketClosed = false;
     const server = createServer((_request, response) => {
       response.writeHead(200, [
         "Content-Type", "image/png",
         "Content-Type", "text/html",
       ]);
       response.end("ambiguous");
+    });
+    server.on("connection", (socket) => {
+      socket.once("close", () => {
+        socketClosed = true;
+      });
     });
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
@@ -82,6 +89,7 @@ describe("fetchLinkPreview security boundary", () => {
         {},
         [{ address: "127.0.0.1", family: 4 }]
       )).rejects.toThrow(/content-type/i);
+      await vi.waitFor(() => expect(socketClosed).toBe(true));
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
@@ -89,18 +97,70 @@ describe("fetchLinkPreview security boundary", () => {
     }
   });
 
-  it("rejects a pinned production response without Content-Type", async () => {
-    const server = createServer((_request, response) => response.end("untyped"));
+  it("rejects duplicate Content-Length headers and closes the pinned transport", async () => {
+    let socketClosed = false;
+    const server = createServer((_request, response) => {
+      response.writeHead(200, [
+        "Content-Type", "image/png",
+        "Content-Length", "9",
+        "Content-Length", "9",
+      ]);
+      response.end("ambiguous");
+    });
+    server.on("connection", (socket) => {
+      socket.once("close", () => {
+        socketClosed = true;
+      });
+    });
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     const port = (server.address() as AddressInfo).port;
 
     try {
       await expect(fetchUsingValidatedAddresses(
-        `http://untyped.invalid:${port}/preview`,
+        `http://duplicate.invalid:${port}/preview`,
         {},
         [{ address: "127.0.0.1", family: 4 }]
-      )).rejects.toThrow(/content-type/i);
+      )).rejects.toThrow(/content-length|parse error/i);
+      await vi.waitFor(() => expect(socketClosed).toBe(true));
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  it("follows a real pinned redirect without Content-Type to a typed final page", async () => {
+    const server = createServer((request, response) => {
+      if (request.url === "/start") {
+        response.writeHead(302, { Location: "/final" });
+        response.end();
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "text/html" });
+      response.end("<title>Final page</title>");
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const dependencies: LinkPreviewDependencies = {
+        lookup: async () => PUBLIC_DNS_RESULT,
+        fetch: (url, init) => fetchUsingValidatedAddresses(
+          url,
+          init,
+          [{ address: "127.0.0.1", family: 4 }]
+        ),
+      };
+
+      await expect(fetchLinkPreview(
+        `http://redirect.example:${port}/start`,
+        dependencies
+      )).resolves.toMatchObject({
+        finalUrl: `http://redirect.example:${port}/final`,
+        title: "Final page",
+      });
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
@@ -177,6 +237,51 @@ describe("fetchLinkPreview security boundary", () => {
     await fetchLinkPreview("https://example.org", dependencies);
 
     expect(cancelled).toBe(true);
+  });
+
+  it("does not start or leak a lookup after the deadline expires during redirect cancellation", async () => {
+    vi.useFakeTimers();
+    const unhandledRejections: unknown[] = [];
+    const captureUnhandledRejection = (reason: unknown) => unhandledRejections.push(reason);
+    process.prependListener("unhandledRejection", captureUnhandledRejection);
+
+    try {
+      let lookups = 0;
+      let cancellationStarted = false;
+      const lateLookupFailure = new Error("late lookup failure");
+      const redirectBody = new ReadableStream({
+        cancel() {
+          cancellationStarted = true;
+          return new Promise<void>((resolve) => setTimeout(resolve, 100));
+        },
+      });
+      const dependencies: LinkPreviewDependencies = {
+        deadlineMs: 50,
+        lookup: async () => {
+          lookups++;
+          if (lookups > 1) throw lateLookupFailure;
+          return PUBLIC_DNS_RESULT;
+        },
+        fetch: async () => new Response(redirectBody, {
+          status: 302,
+          headers: { location: "/after-cancel" },
+        }),
+      };
+      const pending = fetchLinkPreview("https://example.org", dependencies);
+      const rejection = expect(pending).rejects.toThrow(/timed out/i);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(cancellationStarted).toBe(true);
+      await vi.advanceTimersByTimeAsync(100);
+      await rejection;
+      await vi.runAllTicks();
+
+      expect(lookups).toBe(1);
+      expect(unhandledRejections).toEqual([]);
+    } finally {
+      process.removeListener("unhandledRejection", captureUnhandledRejection);
+      vi.useRealTimers();
+    }
   });
 
   it("treats deprecated 192.88.99.0/24 relay addresses as non-public", async () => {
@@ -284,40 +389,97 @@ describe("fetchLinkPreview security boundary", () => {
     }
   });
 
-  it("actively cancels both production DNS queries when its signal aborts", async () => {
-    const aborts: Array<(error: Error) => void> = [];
-    let activeQueries = 0;
-    const resolver: LinkPreviewDnsResolver = {
-      resolve4: async () => {
-        activeQueries++;
-        try {
-          return await new Promise<string[]>((_resolve, reject) => aborts.push(reject));
-        } finally {
-          activeQueries--;
-        }
-      },
-      resolve6: async () => {
-        activeQueries++;
-        try {
-          return await new Promise<string[]>((_resolve, reject) => aborts.push(reject));
-        } finally {
-          activeQueries--;
-        }
-      },
-      cancel: vi.fn(() => {
-        for (const abort of aborts) abort(new Error("DNS query cancelled"));
+  it("actively terminates the OS lookup task and waits for capacity release on abort", async () => {
+    let activeTasks = 1;
+    const task: LinkPreviewLookupTask = {
+      result: new Promise(() => undefined),
+      cancel: vi.fn(async () => {
+        activeTasks--;
       }),
     };
-    const lookup = createAbortableDnsLookup(() => resolver);
+    const lookup = createAbortableDnsLookup(() => task);
     const deadline = new AbortController();
     const pending = lookup("example.org", deadline.signal);
 
-    await vi.waitFor(() => expect(activeQueries).toBe(2));
     deadline.abort(new Error("Preview timed out"));
 
     await expect(pending).rejects.toThrow(/timed out/i);
-    expect(resolver.cancel).toHaveBeenCalledOnce();
-    expect(activeQueries).toBe(0);
+    expect(task.cancel).toHaveBeenCalledOnce();
+    expect(activeTasks).toBe(0);
+  });
+
+  it("cannot return a late lookup result while abort cancellation is still releasing capacity", async () => {
+    let resolveResult: (addresses: typeof PUBLIC_DNS_RESULT) => void = () => undefined;
+    let releaseCapacity: () => void = () => undefined;
+    const task: LinkPreviewLookupTask = {
+      result: new Promise((resolve) => {
+        resolveResult = resolve;
+      }),
+      cancel: vi.fn(() => new Promise<void>((resolve) => {
+        releaseCapacity = resolve;
+      })),
+    };
+    const lookup = createAbortableDnsLookup(() => task);
+    const deadline = new AbortController();
+    const pending = lookup("example.org", deadline.signal);
+    let settled = false;
+    void pending.then(
+      () => { settled = true; },
+      () => { settled = true; }
+    );
+
+    deadline.abort(new Error("Preview timed out"));
+    resolveResult(PUBLIC_DNS_RESULT);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    releaseCapacity();
+    await expect(pending).rejects.toThrow(/timed out/i);
+    expect(task.cancel).toHaveBeenCalledOnce();
+  });
+
+  it("matches node:dns.lookup system resolver results and ordering", async () => {
+    const expected = await osLookup("localhost", { all: true });
+
+    await expect(createAbortableDnsLookup()("localhost")).resolves.toEqual(expected);
+  });
+
+  it.each([
+    {
+      name: "A-only",
+      addresses: [{ address: "93.184.216.34", family: 4 }],
+    },
+    {
+      name: "AAAA-only",
+      addresses: [{ address: "2606:2800:220:1:248:1893:25c8:1946", family: 6 }],
+    },
+    {
+      name: "dual-stack in OS order",
+      addresses: [
+        { address: "2606:2800:220:1:248:1893:25c8:1946", family: 6 },
+        { address: "93.184.216.34", family: 4 },
+      ],
+    },
+  ])("preserves $name lookup results", async ({ addresses }) => {
+    const task: LinkPreviewLookupTask = {
+      result: Promise.resolve(addresses),
+      cancel: vi.fn(),
+    };
+
+    await expect(createAbortableDnsLookup(() => task)("example.org")).resolves.toEqual(addresses);
+    expect(task.cancel).not.toHaveBeenCalled();
+  });
+
+  it("propagates an OS lookup failure without trying transport", async () => {
+    const failure = Object.assign(new Error("host not found"), { code: "ENOTFOUND" });
+    const task: LinkPreviewLookupTask = {
+      result: Promise.reject(failure),
+      cancel: vi.fn(),
+    };
+
+    await expect(createAbortableDnsLookup(() => task)("missing.invalid")).rejects.toBe(failure);
+    expect(task.cancel).not.toHaveBeenCalled();
   });
 
   it("aborts a real delayed local transport within the configured overall deadline", async () => {

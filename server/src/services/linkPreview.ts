@@ -1,8 +1,8 @@
-import { Resolver } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP, type LookupFunction } from "node:net";
 import { Readable } from "node:stream";
+import { Worker } from "node:worker_threads";
 
 const MAX_REDIRECTS = 3;
 const MAX_HTML_BYTES = 1024 * 1024;
@@ -25,10 +25,9 @@ export type LinkPreviewLookupAddress = {
   family: number;
 };
 
-export type LinkPreviewDnsResolver = {
-  resolve4(hostname: string): Promise<string[]>;
-  resolve6(hostname: string): Promise<string[]>;
-  cancel(): void;
+export type LinkPreviewLookupTask = {
+  result: Promise<LinkPreviewLookupAddress[]>;
+  cancel(): Promise<unknown> | unknown;
 };
 
 export type LinkPreviewDependencies = {
@@ -48,36 +47,112 @@ export class UnsafePreviewUrlError extends Error {
   }
 }
 
+const OS_LOOKUP_WORKER_SOURCE = `
+const { lookup } = require("node:dns");
+const { parentPort, workerData } = require("node:worker_threads");
+
+lookup(workerData.hostname, { all: true }, (error, addresses) => {
+  if (error) {
+    parentPort.postMessage({
+      ok: false,
+      error: { message: error.message, code: error.code },
+    });
+    return;
+  }
+  parentPort.postMessage({ ok: true, addresses });
+});
+`;
+
+type LookupWorkerMessage =
+  | { ok: true; addresses: LinkPreviewLookupAddress[] }
+  | { ok: false; error: { message: string; code?: string } };
+
+function createOsLookupTask(hostname: string): LinkPreviewLookupTask {
+  const worker = new Worker(OS_LOOKUP_WORKER_SOURCE, {
+    eval: true,
+    workerData: { hostname },
+  });
+  let completed = false;
+
+  const result = new Promise<LinkPreviewLookupAddress[]>((resolve, reject) => {
+    const cleanup = () => {
+      worker.off("message", receive);
+      worker.off("error", fail);
+      worker.off("exit", exit);
+    };
+    const receive = (message: LookupWorkerMessage) => {
+      completed = true;
+      cleanup();
+      if (!message.ok) {
+        const error = new Error(message.error.message) as NodeJS.ErrnoException;
+        error.code = message.error.code;
+        reject(error);
+        return;
+      }
+      resolve(message.addresses);
+    };
+    const fail = (error: Error) => {
+      completed = true;
+      cleanup();
+      reject(error);
+    };
+    const exit = (code: number) => {
+      if (completed) return;
+      completed = true;
+      cleanup();
+      reject(new Error(`Preview DNS lookup worker exited with code ${code}`));
+    };
+
+    worker.once("message", receive);
+    worker.once("error", fail);
+    worker.once("exit", exit);
+  });
+
+  return {
+    result,
+    cancel: () => worker.terminate(),
+  };
+}
+
 export function createAbortableDnsLookup(
-  createResolver: () => LinkPreviewDnsResolver = () => new Resolver()
+  createTask: (hostname: string) => LinkPreviewLookupTask = createOsLookupTask
 ): LinkPreviewDependencies["lookup"] {
   return async (hostname, signal) => {
     if (signal?.aborted) throw deadlineError(signal);
 
-    const resolver = createResolver();
-    const cancel = () => resolver.cancel();
-    signal?.addEventListener("abort", cancel, { once: true });
+    const task = createTask(hostname);
+    const result = task.result.then(
+      (addresses) => {
+        if (signal?.aborted) throw deadlineError(signal);
+        return addresses;
+      },
+      (error: unknown) => {
+        if (signal?.aborted) throw deadlineError(signal);
+        throw error;
+      }
+    );
+    if (!signal) return result;
+
+    let rejectCancellation: (error: Error) => void = () => undefined;
+    const cancellation = new Promise<never>((_resolve, reject) => {
+      rejectCancellation = reject;
+    });
+    let cancellationStarted = false;
+    const cancel = () => {
+      if (cancellationStarted) return;
+      cancellationStarted = true;
+      Promise.resolve().then(() => task.cancel()).then(
+        () => rejectCancellation(deadlineError(signal)),
+        () => rejectCancellation(deadlineError(signal))
+      );
+    };
+    signal.addEventListener("abort", cancel, { once: true });
+    if (signal.aborted) cancel();
 
     try {
-      const results = await Promise.allSettled([
-        resolver.resolve4(hostname),
-        resolver.resolve6(hostname),
-      ]);
-      if (signal?.aborted) throw deadlineError(signal);
-
-      const addresses = results.flatMap((result, index): LinkPreviewLookupAddress[] =>
-        result.status === "fulfilled"
-          ? result.value.map((address) => ({ address, family: index === 0 ? 4 : 6 }))
-          : []
-      );
-      if (addresses.length > 0) return addresses;
-
-      const failure = results.find((result) => result.status === "rejected");
-      throw failure?.status === "rejected"
-        ? failure.reason
-        : new Error("Preview DNS lookup returned no addresses");
+      return await Promise.race([result, cancellation]);
     } finally {
-      signal?.removeEventListener("abort", cancel);
+      signal.removeEventListener("abort", cancel);
     }
   };
 }
@@ -136,9 +211,9 @@ export function fetchUsingValidatedAddresses(
       },
       (incoming) => {
         const contentTypes = incoming.headersDistinct["content-type"] ?? [];
-        if (contentTypes.length !== 1) {
+        if (contentTypes.length > 1) {
           incoming.destroy();
-          reject(new Error("Preview response must contain exactly one Content-Type header"));
+          reject(new Error("Preview response must not contain duplicate Content-Type headers"));
           return;
         }
         const contentLengths = incoming.headersDistinct["content-length"] ?? [];
@@ -286,7 +361,7 @@ export async function resolvePublicHttpUrl(
     return { url, addresses: [{ address: hostname, family: literalFamily }] };
   }
 
-  const addresses = await withDeadline(lookup(hostname, signal), signal);
+  const addresses = await withDeadline(() => lookup(hostname, signal), signal);
   if (addresses.length === 0 || addresses.some(({ address }) => !isPublicAddress(address))) {
     throw new UnsafePreviewUrlError();
   }
@@ -309,9 +384,20 @@ function deadlineError(signal?: AbortSignal): Error {
   return new Error("Preview timed out");
 }
 
-export function withDeadline<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) return operation;
-  if (signal.aborted) return Promise.reject(deadlineError(signal));
+export function throwIfPreviewDeadlineElapsed(signal: AbortSignal): void {
+  if (signal.aborted) throw deadlineError(signal);
+}
+
+export function withDeadline<T>(operation: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (signal?.aborted) return Promise.reject(deadlineError(signal));
+
+  let pending: Promise<T>;
+  try {
+    pending = operation();
+  } catch (error) {
+    return Promise.reject(error);
+  }
+  if (!signal) return pending;
 
   return new Promise<T>((resolve, reject) => {
     let settled = false;
@@ -323,7 +409,8 @@ export function withDeadline<T>(operation: Promise<T>, signal?: AbortSignal): Pr
     };
     const abort = () => settle(() => reject(deadlineError(signal)));
     signal.addEventListener("abort", abort, { once: true });
-    operation.then(
+    if (signal.aborted) abort();
+    pending.then(
       (value) => settle(() => resolve(value)),
       (error: unknown) => settle(() => reject(error))
     );
@@ -344,7 +431,7 @@ async function readBoundedHtml(response: Response, signal: AbortSignal): Promise
 
   try {
     while (true) {
-      const { done, value } = await withDeadline(reader.read(), signal);
+      const { done, value } = await withDeadline(() => reader.read(), signal);
       if (done) break;
       bytesRead += value.byteLength;
       if (bytesRead > MAX_HTML_BYTES) {
@@ -475,16 +562,20 @@ export async function fetchLinkPreview(
 
   try {
     while (true) {
+      throwIfPreviewDeadlineElapsed(deadline.signal);
       const { url: validatedUrl, addresses } = await resolvePublicHttpUrl(
         currentUrl,
         dependencies.lookup,
         deadline.signal
       );
-      const response = await withDeadline(dependencies.fetch(validatedUrl.toString(), {
-        redirect: "manual",
-        signal: deadline.signal,
-        headers: { Accept: "text/html" },
-      }, addresses), deadline.signal);
+      const response = await withDeadline(
+        () => dependencies.fetch(validatedUrl.toString(), {
+          redirect: "manual",
+          signal: deadline.signal,
+          headers: { Accept: "text/html" },
+        }, addresses),
+        deadline.signal
+      );
 
       try {
         if (REDIRECT_STATUSES.has(response.status)) {
