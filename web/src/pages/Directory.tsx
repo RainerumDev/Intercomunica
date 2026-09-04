@@ -170,8 +170,9 @@ export default function Directory() {
   const selectedSubgroupForPane = subgroups.find(({ id }) => id === selectedSubgroupId) ?? null;
 
   const openMobileDetail = (trigger: HTMLButtonElement) => {
+    if (mobileDetailOpen) return;
     listScrollOffsetRef.current = window.scrollY;
-    if (!mobileDetailOpen) mobileDetailTriggerRef.current = trigger;
+    mobileDetailTriggerRef.current = trigger;
     setMobileDetailOpen(true);
     const isMobile = typeof window.matchMedia !== "function"
       || window.matchMedia("(max-width: 1023px)").matches;

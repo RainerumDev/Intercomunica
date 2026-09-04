@@ -281,6 +281,30 @@ describe("Directory shell state", () => {
     expect(screen.getByTestId("directory-layout").classList.contains("directory-layout--detail-open")).toBe(false);
   });
 
+  it("keeps the original list position when the selected teacher is clicked again inside mobile detail", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "get").mockImplementation(((path: string) => {
+      if (path === "/api/users") return Promise.resolve([member]);
+      if (path === "/api/subgroups") return Promise.resolve([subgroup]);
+      throw new Error(`Unexpected GET ${path}`);
+    }) as typeof api.get);
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+
+    renderDirectory();
+    await screen.findByRole("searchbox", { name: "Cerca docenti" });
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 216 });
+    const listRow = screen.getByRole("button", { name: "Mostra dettagli di Docente" });
+    await user.click(listRow);
+    const detailTable = screen.getByRole("table", { name: "Dettaglio di Docente" });
+
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 640 });
+    await user.click(within(detailTable).getByRole("button", { name: "Mostra dettagli di Docente" }));
+    await user.click(screen.getByRole("button", { name: "Torna a tutti i docenti" }));
+
+    await waitFor(() => expect(scrollTo).toHaveBeenLastCalledWith({ top: 216, behavior: "auto" }));
+    expect(document.activeElement).toBe(listRow);
+  });
+
   it("opens and closes the contextual group detail without clearing its query", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "get").mockImplementation(((path: string) => {
