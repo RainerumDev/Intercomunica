@@ -2,7 +2,6 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP, type LookupFunction } from "node:net";
 import { Readable } from "node:stream";
-import { MIMEType } from "node:util";
 import { Worker } from "node:worker_threads";
 
 const MAX_REDIRECTS = 3;
@@ -10,17 +9,14 @@ const MAX_HTML_BYTES = 1024 * 1024;
 const MAX_TITLE_LENGTH = 160;
 const MAX_DESCRIPTION_LENGTH = 500;
 const MAX_SITE_NAME_LENGTH = 160;
+const MAX_LOOKUP_WORKER_ADDRESSES = 64;
 export const PREVIEW_REQUEST_TIMEOUT_MS = 5000;
 // DNS lookups use one Worker each. These module-wide production limits prevent
 // request bursts from creating an unbounded number of threads or queued jobs.
 export const MAX_ACTIVE_PREVIEW_DNS_WORKERS = 6;
 export const MAX_QUEUED_PREVIEW_DNS_LOOKUPS = 24;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
-const MIME_TOKEN = "[!#$%&'*+\\-.^_`|~0-9A-Za-z]+";
-const MIME_QUOTED_VALUE = '"(?:[\\t\\x20-\\x21\\x23-\\x5b\\x5d-\\x7e]|\\\\[\\t\\x20-\\x7e])*"';
-const STRICT_MIME_SYNTAX = new RegExp(
-  `^\\s*${MIME_TOKEN}/${MIME_TOKEN}(?:\\s*;\\s*${MIME_TOKEN}\\s*=\\s*(?:${MIME_TOKEN}|${MIME_QUOTED_VALUE}))*\\s*$`
-);
+const MAX_CONTENT_TYPE_LENGTH = 256;
 
 export type LinkPreview = {
   finalUrl: string;
@@ -61,16 +57,116 @@ export class UnsafePreviewUrlError extends Error {
   }
 }
 
+function invalidContentType(): Error {
+  return new Error("Preview Content-Type is invalid");
+}
+
+function isContentTypeTokenCharacter(code: number): boolean {
+  return (
+    (code >= 0x30 && code <= 0x39) ||
+    (code >= 0x41 && code <= 0x5a) ||
+    (code >= 0x61 && code <= 0x7a) ||
+    code === 0x21 ||
+    code === 0x23 ||
+    code === 0x24 ||
+    code === 0x25 ||
+    code === 0x26 ||
+    code === 0x27 ||
+    code === 0x2a ||
+    code === 0x2b ||
+    code === 0x2d ||
+    code === 0x2e ||
+    code === 0x5e ||
+    code === 0x5f ||
+    code === 0x60 ||
+    code === 0x7c ||
+    code === 0x7e
+  );
+}
+
+function consumeContentTypeToken(value: string, start: number): number {
+  let index = start;
+  while (index < value.length && isContentTypeTokenCharacter(value.charCodeAt(index))) index++;
+  if (index === start) throw invalidContentType();
+  return index;
+}
+
+function consumeOptionalWhitespace(value: string, start: number): number {
+  let index = start;
+  while (value.charCodeAt(index) === 0x20 || value.charCodeAt(index) === 0x09) index++;
+  return index;
+}
+
+function isQuotedText(code: number): boolean {
+  return (
+    code === 0x09 ||
+    code === 0x20 ||
+    code === 0x21 ||
+    (code >= 0x23 && code <= 0x5b) ||
+    (code >= 0x5d && code <= 0x7e) ||
+    (code >= 0x80 && code <= 0xff)
+  );
+}
+
+function isQuotedPairCharacter(code: number): boolean {
+  return (
+    code === 0x09 ||
+    code === 0x20 ||
+    (code >= 0x21 && code <= 0x7e) ||
+    (code >= 0x80 && code <= 0xff)
+  );
+}
+
+function consumeQuotedString(value: string, start: number): number {
+  let index = start + 1;
+  while (index < value.length) {
+    const code = value.charCodeAt(index);
+    if (code === 0x22) return index + 1;
+    if (code === 0x5c) {
+      index++;
+      if (index >= value.length || !isQuotedPairCharacter(value.charCodeAt(index))) {
+        throw invalidContentType();
+      }
+      index++;
+      continue;
+    }
+    if (!isQuotedText(code)) throw invalidContentType();
+    index++;
+  }
+  throw invalidContentType();
+}
+
 export function parseStrictContentType(value: string): string {
-  if (value.length > 256 || !STRICT_MIME_SYNTAX.test(value)) {
-    throw new Error("Preview Content-Type is invalid");
+  if (value.length === 0 || value.length > MAX_CONTENT_TYPE_LENGTH) {
+    throw invalidContentType();
   }
 
-  try {
-    return new MIMEType(value).essence.toLowerCase();
-  } catch {
-    throw new Error("Preview Content-Type is invalid");
+  const typeEnd = consumeContentTypeToken(value, 0);
+  if (value[typeEnd] !== "/") throw invalidContentType();
+  const subtypeStart = typeEnd + 1;
+  const subtypeEnd = consumeContentTypeToken(value, subtypeStart);
+  let index = subtypeEnd;
+
+  while (index < value.length) {
+    index = consumeOptionalWhitespace(value, index);
+    if (value[index] !== ";") throw invalidContentType();
+    index = consumeOptionalWhitespace(value, index + 1);
+
+    if (index === value.length || value[index] === ";") continue;
+
+    index = consumeContentTypeToken(value, index);
+    if (value[index] !== "=") throw invalidContentType();
+    index++;
+    if (value[index] === '"') {
+      index = consumeQuotedString(value, index);
+    } else {
+      index = consumeContentTypeToken(value, index);
+    }
   }
+
+  return `${value.slice(0, typeEnd).toLowerCase()}/${value
+    .slice(subtypeStart, subtypeEnd)
+    .toLowerCase()}`;
 }
 
 const OS_LOOKUP_WORKER_SOURCE = `
@@ -104,8 +200,14 @@ function parseLookupWorkerMessage(message: unknown): LookupWorkerMessage {
   const record = message as Record<string, unknown>;
 
   if (record.ok === true) {
-    if (!Array.isArray(record.addresses)) throw invalidLookupWorkerMessage();
-    const addresses = record.addresses.map((entry): LinkPreviewLookupAddress => {
+    const rawAddresses = record.addresses;
+    if (!Array.isArray(rawAddresses) || rawAddresses.length > MAX_LOOKUP_WORKER_ADDRESSES) {
+      throw invalidLookupWorkerMessage();
+    }
+    const addresses: LinkPreviewLookupAddress[] = [];
+    for (let index = 0; index < rawAddresses.length; index++) {
+      if (!Object.hasOwn(rawAddresses, index)) throw invalidLookupWorkerMessage();
+      const entry = rawAddresses[index];
       if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
         throw invalidLookupWorkerMessage();
       }
@@ -118,8 +220,8 @@ function parseLookupWorkerMessage(message: unknown): LookupWorkerMessage {
       ) {
         throw invalidLookupWorkerMessage();
       }
-      return { address, family };
-    });
+      addresses.push({ address, family });
+    }
     return { ok: true, addresses };
   }
 

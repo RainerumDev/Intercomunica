@@ -12,6 +12,7 @@ import {
   fetchUsingValidatedAddresses,
   MAX_ACTIVE_PREVIEW_DNS_WORKERS,
   MAX_QUEUED_PREVIEW_DNS_LOOKUPS,
+  parseStrictContentType,
   UnsafePreviewUrlError,
   type LinkPreviewDependencies,
   type LinkPreviewLookupTask,
@@ -38,6 +39,48 @@ const fakePublicDependencies = previewDependencies([]);
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("RFC 9110 Content-Type parsing", () => {
+  it.each([
+    ["text/html", "text/html"],
+    ['Text/HTML;Charset="utf-8"', "text/html"],
+    ["application/XHTML+XML \t; charset=utf-8; ;", "application/xhtml+xml"],
+    ["text/html;", "text/html"],
+    ["text/html; ; charset=utf-8;;", "text/html"],
+    ['text/html; title="café"', "text/html"],
+    ['image/png; title="café"; empty=""', "image/png"],
+    ['image/jpeg; note="a\\"b\\\\c"', "image/jpeg"],
+    ['image/webp; note="caf\\é"', "image/webp"],
+    ["image/gif;symbols=!#$%&'*+-.^_`|~", "image/gif"],
+  ])("normalizes valid field value %j to %s", (value, expected) => {
+    expect(parseStrictContentType(value)).toBe(expected);
+  });
+
+  it.each([
+    "text /html",
+    "text/ html",
+    "text/html; charset =utf-8",
+    "text/html; charset= utf-8",
+    "text/html; charset\t=utf-8",
+    "text/html; charset=\tutf-8",
+    "text/html; charset=",
+    "text/html; =utf-8",
+    'text/html; charset="unterminated',
+    'text/html; charset="bad\\',
+    'text/html; title="closed"junk',
+    'image/png; title="line\rbreak"',
+    'image/png; title="line\nbreak"',
+    'image/png; title="nul\0byte"',
+    'image/png; title="delete\x7fbyte"',
+    'image/png; title="wide\u0100"',
+    'image/png; title="bad\\\x7fescape"',
+    "image/png,text/html",
+    "\rtext/html",
+    "text/html\n",
+  ])("rejects invalid field value %j", (value) => {
+    expect(() => parseStrictContentType(value)).toThrow(/content-type/i);
+  });
 });
 
 describe("fetchLinkPreview security boundary", () => {
@@ -625,6 +668,14 @@ describe("fetchLinkPreview security boundary", () => {
     {},
     { ok: "true", addresses: [] },
     { ok: true, addresses: null },
+    { ok: true, addresses: new Array(1) },
+    {
+      ok: true,
+      addresses: Array.from({ length: 65 }, (_, index) => ({
+        address: `93.184.216.${index + 1}`,
+        family: 4,
+      })),
+    },
     { ok: true, addresses: [{ address: "93.184.216.34", family: "4" }] },
     { ok: true, addresses: [{ address: "not-an-address", family: 4 }] },
     { ok: true, addresses: [{ address: "93.184.216.34", family: 6 }] },
@@ -641,8 +692,87 @@ describe("fetchLinkPreview security boundary", () => {
     });
     const task = createLookupWorkerTask(worker);
 
-    await expect(task.result).rejects.toThrow(/invalid message/i);
-    await expect(task.finished).resolves.toBeUndefined();
+    try {
+      await expect(task.result).rejects.toThrow(/invalid message/i);
+      await expect(task.finished).resolves.toBeUndefined();
+    } finally {
+      await worker.terminate().catch(() => undefined);
+    }
+  });
+
+  it("terminates a sparse-message Worker and lets subsequent queued work proceed", async () => {
+    type ControlledTask = {
+      hostname: string;
+      completeResult(): void;
+      finishWorker(): void;
+    };
+    const sparseWorker = new Worker(`
+      const { parentPort } = require("node:worker_threads");
+      parentPort.postMessage({ ok: true, addresses: new Array(1) });
+      setInterval(() => undefined, 1000);
+    `, { eval: true });
+    const controlledTasks: ControlledTask[] = [];
+    const createdHostnames: string[] = [];
+    const lookup = createBoundedDnsLookup((hostname) => {
+      createdHostnames.push(hostname);
+      if (hostname === "sparse.example") return createLookupWorkerTask(sparseWorker);
+
+      let completeResult: (addresses: typeof PUBLIC_DNS_RESULT) => void = () => undefined;
+      let finishWorker: () => void = () => undefined;
+      let resultCompleted = false;
+      let workerFinished = false;
+      const task: ScheduledLinkPreviewLookupTask = {
+        result: new Promise((resolve) => {
+          completeResult = resolve;
+        }),
+        finished: new Promise((resolve) => {
+          finishWorker = resolve;
+        }),
+        cancel: vi.fn(),
+      };
+      controlledTasks.push({
+        hostname,
+        completeResult() {
+          if (resultCompleted) return;
+          resultCompleted = true;
+          completeResult(PUBLIC_DNS_RESULT);
+        },
+        finishWorker() {
+          if (workerFinished) return;
+          workerFinished = true;
+          finishWorker();
+        },
+      });
+      return task;
+    });
+    const hostnames = [
+      "sparse.example",
+      ...Array.from(
+        { length: MAX_ACTIVE_PREVIEW_DNS_WORKERS - 1 },
+        (_, index) => `held-${index}.example`
+      ),
+      "queued.example",
+    ];
+    const deadlines = hostnames.map(() => new AbortController());
+    const requests = hostnames.map((hostname, index) => lookup(hostname, deadlines[index].signal));
+    const observed = requests.map((request) => request.catch(() => undefined));
+
+    try {
+      expect(createdHostnames).not.toContain("queued.example");
+      await expect(requests[0]).rejects.toThrow(/invalid message/i);
+      await vi.waitFor(() => expect(createdHostnames).toContain("queued.example"));
+
+      const queuedTask = controlledTasks.find(({ hostname }) => hostname === "queued.example");
+      expect(queuedTask).toBeDefined();
+      queuedTask?.completeResult();
+      await expect(requests.at(-1)).resolves.toEqual(PUBLIC_DNS_RESULT);
+      queuedTask?.finishWorker();
+    } finally {
+      await sparseWorker.terminate().catch(() => undefined);
+      for (const deadline of deadlines.slice(1)) deadline.abort(new Error("cleanup"));
+      for (const task of controlledTasks) task.finishWorker();
+      await Promise.all(observed);
+    }
   });
 
   it("reconstructs a fully validated lookup error from a Worker message", async () => {
