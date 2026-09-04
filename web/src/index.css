@@ -1348,6 +1348,233 @@ button {
   min-height: 44px;
 }
 
+.group-directory,
+.group-directory__section,
+.group-directory__rows {
+  display: grid;
+}
+
+.group-directory {
+  gap: 1.5rem;
+}
+
+.group-directory__section {
+  gap: 0.5rem;
+}
+
+.group-directory__heading {
+  margin: 0;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.group-directory__rows {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.group-directory-row {
+  display: grid;
+  grid-template-columns: 0.75rem minmax(0, 1fr) auto;
+  min-height: 72px;
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 0.75rem;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.group-directory-row:last-child {
+  border-bottom: 0;
+}
+
+.group-directory-row:hover,
+.group-directory-row[aria-pressed="true"] {
+  background: var(--surface-soft);
+}
+
+.group-directory-row[aria-pressed="true"] {
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+.group-directory-row__color {
+  width: 0.75rem;
+  height: 2.75rem;
+  border-radius: 999px;
+}
+
+.group-directory-row__body,
+.group-directory-row__name,
+.group-directory-row__description,
+.group-directory-row__count {
+  min-width: 0;
+}
+
+.group-directory-row__body {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.group-directory-row__name {
+  overflow-wrap: anywhere;
+  font-size: 0.9375rem;
+  font-weight: 800;
+}
+
+.group-directory-row__description,
+.group-directory-row__count,
+.group-detail__description,
+.group-member-row__email {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.group-directory-row__description,
+.group-member-row__email {
+  overflow-wrap: anywhere;
+}
+
+.group-directory-row__count {
+  white-space: nowrap;
+}
+
+.group-detail {
+  min-width: 0;
+}
+
+.group-detail__header,
+.group-detail__admin-actions {
+  display: flex;
+  align-items: flex-start;
+}
+
+.group-detail__header {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.group-detail__admin-actions {
+  gap: 0.25rem;
+}
+
+.group-detail__icon-button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.group-detail__icon-button:hover {
+  background: var(--surface-soft);
+}
+
+.group-detail__icon-button svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.group-detail__eyebrow {
+  margin: 0 0 0.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.group-detail__title,
+.group-detail__description {
+  overflow-wrap: anywhere;
+}
+
+.group-detail__description {
+  margin-top: 0.75rem;
+  line-height: 1.55;
+}
+
+.group-detail__members {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.group-detail__members-title {
+  margin: 0 0 0.75rem;
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+.group-detail__member-list {
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 0;
+  list-style: none;
+}
+
+.group-member-row {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  min-height: 64px;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.65rem 0.75rem;
+}
+
+.group-member-row:last-child {
+  border-bottom: 0;
+}
+
+.group-member-row__initials {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--brand-hover);
+  background: var(--surface-soft);
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.group-member-row__text {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.group-member-row__name {
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.group-detail__empty {
+  padding-block: 1rem;
+}
+
+.group-detail__email {
+  margin-top: 1.25rem;
+}
+
 @media (min-width: 1024px) {
   .directory-layout {
     display: grid;
@@ -1364,6 +1591,7 @@ button {
   .directory-detail-pane__back {
     display: none;
   }
+
 }
 
 .dialog-panel {

@@ -5,11 +5,13 @@ import { useAuth } from "../auth";
 import type { Member, Subgroup } from "../types";
 import DirectoryTabs from "../components/DirectoryTabs";
 import EmailComposer from "../components/EmailComposer";
+import GroupDetail from "../components/GroupDetail";
+import GroupDirectory, { type GroupDirectorySection } from "../components/GroupDirectory";
 import SubgroupChip from "../components/SubgroupChip";
 import SubgroupDetailsModal from "../components/SubgroupDetailsModal";
 import TeacherDetail from "../components/TeacherDetail";
 import TeacherDirectory from "../components/TeacherDirectory";
-import { normalizeColorOverride, sortMembers, sortSubgroups } from "../subgroups";
+import { buildDirectorySections, normalizeColorOverride, sortMembers, sortSubgroups } from "../subgroups";
 import { useDialogFocus } from "../components/useDialogFocus";
 import {
   filterTeachers,
@@ -18,6 +20,7 @@ import {
   type DirectoryTab,
   type TeacherScope,
 } from "../directory";
+import { normalizeSearchText } from "../search";
 
 export default function Directory() {
   const { me } = useAuth();
@@ -47,18 +50,6 @@ export default function Directory() {
     onClose: () => setEditingSubgroup(null),
   });
 
-  const EditIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-    </svg>
-  );
-
-  const TrashIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-    </svg>
-  );
-
   const reload = async () => {
     const [m, s] = await Promise.all([
       api.get<Member[]>("/api/users"),
@@ -87,23 +78,33 @@ export default function Directory() {
   );
 
   const filteredSubgroups = useMemo(() => {
-    const needle = groupQuery.trim().toLowerCase();
+    const needle = normalizeSearchText(groupQuery);
     if (!needle) return subgroups;
-    return subgroups.filter((s) => s.name.toLowerCase().includes(needle) || (s.folder?.toLowerCase() ?? "").includes(needle));
+    return subgroups.filter((s) => normalizeSearchText(`${s.name} ${s.folder ?? ""}`).includes(needle));
   }, [subgroups, groupQuery]);
 
-  const groupedSubgroups = useMemo(() => {
-    const groups: Record<string, Subgroup[]> = {};
-    sortSubgroups(filteredSubgroups).forEach(s => {
-      const folder = s.folder?.trim() || "Generale";
-      if (!groups[folder]) groups[folder] = [];
-      groups[folder].push(s);
-    });
-    return groups;
-  }, [filteredSubgroups]);
+  const groupSections = useMemo(() => {
+    const derivedLabels = new Map<string, string>();
+    for (const section of buildDirectorySections(members, filteredSubgroups)) {
+      if (section.kind === "folder") {
+        section.groups.forEach(({ subgroup }) => derivedLabels.set(subgroup.id, section.label));
+      }
+    }
+
+    const sections = new Map<string, GroupDirectorySection>();
+    for (const subgroup of sortSubgroups(filteredSubgroups)) {
+      const label = derivedLabels.get(subgroup.id) || subgroup.folder?.trim() || "Generale";
+      const section = sections.get(label) ?? { label, groups: [] };
+      section.groups.push(subgroup);
+      sections.set(label, section);
+    }
+    return [...sections.values()];
+  }, [filteredSubgroups, members]);
 
   const selectedMember = filtered.find(({ id }) => id === selectedMemberId) ?? filtered[0] ?? null;
-  const selectedSubgroupForPane = subgroups.find(({ id }) => id === selectedSubgroupId) ?? null;
+  const selectedSubgroupForPane = filteredSubgroups.find(({ id }) => id === selectedSubgroupId)
+    ?? filteredSubgroups[0]
+    ?? null;
 
   const openMobileDetail = (trigger: HTMLButtonElement) => {
     if (mobileDetailOpen) return;
@@ -185,6 +186,7 @@ export default function Directory() {
     try {
       await api.put(`/api/subgroups/${s.id}`, {
         name: s.name.trim(),
+        description: s.description?.trim() || null,
         folder: s.folder?.trim() || null,
         color: normalizeColorOverride(s.color),
       });
@@ -272,49 +274,11 @@ export default function Directory() {
                   />
                 </div>
                 <div className="space-y-6">
-                  {Object.entries(groupedSubgroups).map(([folder, list]) => (
-                    <div key={folder}>
-                      <h3 className="section-heading mb-2 border-b border-[var(--line)] pb-1">{folder}</h3>
-                      <div className="grid gap-2 grid-cols-1">
-                        {list.map((s) => (
-                          <div key={s.id} className="surface-card surface-card--interactive flex flex-col justify-between p-3">
-                            <div className="flex items-start justify-between gap-2">
-                              <button
-                                type="button"
-                                onClick={(event) => selectSubgroup(s.id, event.currentTarget)}
-                                className="min-w-0 flex-1 rounded-md p-1 text-left focus:outline-none focus:ring-2 focus:ring-[var(--focus)]"
-                                aria-label={`Mostra dettagli di ${s.name}`}
-                                aria-pressed={selectedSubgroupId === s.id}
-                              >
-                                <SubgroupChip subgroup={s} />
-                                <span className="mt-1 block text-xs text-gray-500">{s.members.length} membri</span>
-                              </button>
-                              {isAdmin && (
-                                <div className="flex items-center gap-2 shrink-0 mt-0.5">
-                                  <button type="button" onClick={() => setEditingSubgroup(s)} title="Modifica sottogruppo" className="text-action">
-                                    <EditIcon />
-                                  </button>
-                                  <button type="button" onClick={() => deleteSubgroup(s)} title="Elimina sottogruppo" className="text-action text-action--danger">
-                                    <TrashIcon />
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                            {isAdmin && (
-                              <button
-                                type="button"
-                                onClick={() => setEmailTarget(s)}
-                                disabled={s.members.length === 0}
-                                className="button button--secondary button--small button--wide mt-2.5"
-                              >
-                                ✉️ Invia Email
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                  <GroupDirectory
+                    sections={groupSections}
+                    selectedId={selectedSubgroupForPane?.id ?? null}
+                    onSelect={selectSubgroup}
+                  />
 
                   {isAdmin && groupQuery.trim() === "" && (
                     <div className="surface-card surface-card--padded mt-6 border-dashed">
@@ -323,7 +287,7 @@ export default function Directory() {
                         <input value={newSubgroup} onChange={(e) => setNewSubgroup(e.target.value)} onKeyDown={(e) => e.key === "Enter" && newSubgroup.trim() && createSubgroup()} placeholder="Nome (es. 1A)" className="form-control flex-1" />
                         <input value={newFolder} onChange={(e) => setNewFolder(e.target.value)} onKeyDown={(e) => e.key === "Enter" && newSubgroup.trim() && createSubgroup()} placeholder="Cartella (opzionale)" className="form-control flex-1" list="folders" />
                         <datalist id="folders">
-                          {Object.keys(groupedSubgroups).map((folder) => <option key={folder} value={folder} />)}
+                          {groupSections.map(({ label }) => <option key={label} value={label} />)}
                         </datalist>
                         <button onClick={createSubgroup} disabled={!newSubgroup.trim()} className="button button--primary shrink-0">+ Crea</button>
                       </div>
@@ -383,14 +347,13 @@ export default function Directory() {
               onInspect={inspectSubgroup}
             />
           ) : tab === "groups" && selectedSubgroupForPane ? (
-            <section className="surface-card surface-card--padded">
-              <h2 className="section-heading mb-3">{selectedSubgroupForPane.name}</h2>
-              <SubgroupChip subgroup={selectedSubgroupForPane} />
-              <p className="mt-2 text-sm text-gray-500">{selectedSubgroupForPane.members.length} membri</p>
-              <button type="button" className="button button--secondary button--small mt-3" onClick={() => setSelectedSubgroup(selectedSubgroupForPane)}>
-                Mostra i membri
-              </button>
-            </section>
+            <GroupDetail
+              subgroup={selectedSubgroupForPane}
+              isAdmin={isAdmin}
+              onEdit={() => setEditingSubgroup(selectedSubgroupForPane)}
+              onDelete={() => deleteSubgroup(selectedSubgroupForPane)}
+              onEmail={() => setEmailTarget(selectedSubgroupForPane)}
+            />
           ) : (
             <p className="surface-card field-hint directory-empty">
               {tab === "teachers" ? "Seleziona un docente per vedere i dettagli." : "Seleziona un gruppo per vedere i dettagli."}
@@ -446,6 +409,14 @@ export default function Directory() {
                 placeholder="Cartella (opzionale)"
                 className="form-control"
                 list="folders"
+              />
+              <textarea
+                aria-label="Descrizione"
+                value={editingSubgroup.description || ""}
+                onChange={(e) => setEditingSubgroup({ ...editingSubgroup, description: e.target.value })}
+                placeholder="Descrizione (opzionale)"
+                rows={3}
+                className="form-control"
               />
 
               <div className="rounded-lg border border-gray-200 p-3">

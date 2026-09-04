@@ -42,7 +42,7 @@ describe("SubgroupDetailsModal focus", () => {
 
     await user.click(trigger);
     const close = screen.getByLabelText("Chiudi");
-    const email = screen.getByRole("button", { name: "✉️ Invia email" });
+    const email = screen.getByRole("button", { name: "Invia email al gruppo" });
     expect(document.activeElement).toBe(close);
 
     close.focus();
@@ -52,5 +52,27 @@ describe("SubgroupDetailsModal focus", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it("shows the complete sorted member list before the email action", async () => {
+    const manyMembers = Array.from({ length: 11 }, (_, index) => ({
+      id: `member-${index}`,
+      email: `member-${index}@example.edu`,
+      name: `Docente ${String(10 - index).padStart(2, "0")}`,
+    }));
+    render(
+      <SubgroupDetailsModal
+        subgroup={{ ...subgroup, members: manyMembers }}
+        onClose={() => undefined}
+        onEmail={() => undefined}
+      />
+    );
+
+    const members = screen.getAllByRole("listitem");
+    expect(members).toHaveLength(11);
+    expect(members[0].textContent).toContain("Docente 00");
+    expect(screen.queryByText(/Mostra tutti/i)).toBeNull();
+    const email = screen.getByRole("button", { name: "Invia email al gruppo" });
+    expect(members.at(-1)!.compareDocumentPosition(email) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

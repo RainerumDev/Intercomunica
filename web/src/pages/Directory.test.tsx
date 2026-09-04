@@ -67,7 +67,7 @@ describe("Directory subgroup editor dialog", () => {
       throw new Error(`Unexpected GET ${path}`);
     }) as typeof api.get);
     renderDirectory("/directory?tab=groups");
-    const trigger = await screen.findByRole("button", { name: "Modifica sottogruppo" });
+    const trigger = await screen.findByRole("button", { name: "Modifica gruppo" });
     await user.click(trigger);
 
     const dialog = screen.getByRole("dialog", { name: "Modifica sottogruppo" });
@@ -85,6 +85,65 @@ describe("Directory subgroup editor dialog", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it("keeps description in the admin editor and mutation payload", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "get").mockImplementation(((path: string) => {
+      if (path === "/api/users") return Promise.resolve([member]);
+      if (path === "/api/subgroups") return Promise.resolve([subgroup]);
+      throw new Error(`Unexpected GET ${path}`);
+    }) as typeof api.get);
+    const put = vi.spyOn(api, "put").mockResolvedValue(undefined);
+    renderDirectory("/directory?tab=groups");
+
+    await user.click(await screen.findByRole("button", { name: /Modifica (gruppo|sottogruppo)/ }));
+    const description = screen.getByRole("textbox", { name: "Descrizione" });
+    await user.type(description, "Descrizione completa");
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+
+    expect(put).toHaveBeenCalledWith("/api/subgroups/group-1", {
+      name: "Gruppo uno",
+      description: "Descrizione completa",
+      folder: null,
+      color: null,
+    });
+  });
+});
+
+describe("Directory group master detail", () => {
+  it("selects the first group and renders its complete member detail without a secondary modal", async () => {
+    const manyMembers = Array.from({ length: 11 }, (_, index) => ({
+      id: `member-${index}`,
+      email: `member-${index}@example.edu`,
+      name: `Docente ${index}`,
+    }));
+    const completeGroup = { ...subgroup, description: "Descrizione gruppo", members: manyMembers };
+    vi.spyOn(api, "get").mockImplementation(((path: string) => {
+      if (path === "/api/users") return Promise.resolve([member]);
+      if (path === "/api/subgroups") return Promise.resolve([completeGroup]);
+      throw new Error(`Unexpected GET ${path}`);
+    }) as typeof api.get);
+
+    renderDirectory("/directory?tab=groups");
+
+    expect(await screen.findByRole("heading", { name: "Gruppo uno" })).not.toBeNull();
+    expect(screen.getAllByTestId("group-member")).toHaveLength(11);
+    expect(screen.queryByRole("button", { name: /Mostra i membri/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "Invia email al gruppo" })).not.toBeNull();
+  });
+
+  it("opens the existing email composer from the final detail action", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "get").mockImplementation(((path: string) => {
+      if (path === "/api/users") return Promise.resolve([member]);
+      if (path === "/api/subgroups") return Promise.resolve([subgroup]);
+      throw new Error(`Unexpected GET ${path}`);
+    }) as typeof api.get);
+    renderDirectory("/directory?tab=groups");
+
+    await user.click(await screen.findByRole("button", { name: "Invia email al gruppo" }));
+    expect(screen.getByRole("dialog", { name: "✉️ Email a «Gruppo uno»" })).not.toBeNull();
   });
 });
 

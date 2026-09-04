@@ -44,7 +44,7 @@ export default function SubgroupDetailsModal({ subgroup, onClose, onEmail }: Pro
           <SubgroupChip subgroup={subgroup} />
         </div>
 
-        <div className="mt-5 max-h-72 overflow-y-auto rounded-lg border border-[var(--line)]">
+        <div className="mt-5 rounded-lg border border-[var(--line)]">
           {members.length === 0 ? (
             <p className="field-hint px-4 py-8 text-center">Nessun membro nel sottogruppo.</p>
           ) : (
@@ -69,7 +69,7 @@ export default function SubgroupDetailsModal({ subgroup, onClose, onEmail }: Pro
             disabled={members.length === 0}
             className="button button--primary"
           >
-            ✉️ Invia email
+            Invia email al gruppo
           </button>
         </div>
       </div>
