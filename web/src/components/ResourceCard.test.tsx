@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { SharedResource } from "../types";
 import ResourceCard from "./ResourceCard";
@@ -26,7 +26,7 @@ const persistedResource: SharedResource = {
 afterEach(cleanup);
 
 describe("ResourceCard", () => {
-  it("renders a persisted preview through the local authenticated endpoint", () => {
+  it("renders a persisted preview through a versioned local authenticated endpoint", () => {
     render(<ResourceCard resource={{
       ...persistedResource,
       id: "resource/1",
@@ -34,11 +34,43 @@ describe("ResourceCard", () => {
     }} />);
 
     const image = document.querySelector("img");
-    expect(image?.getAttribute("src")).toBe("/api/resources/resource%2F1/preview-image");
+    expect(image?.getAttribute("src")).toBe(
+      "/api/resources/resource%2F1/preview-image?v=2026-09-04T08%3A00%3A00.000Z"
+    );
     expect(image?.getAttribute("onerror")).toBeNull();
     expect(image?.getAttribute("alt")).toBe("");
     expect(image?.getAttribute("loading")).toBe("lazy");
     expect(image?.getAttribute("decoding")).toBe("async");
+    expect(screen.queryByText("example.org")).toBeNull();
+    expect(document.documentElement.innerHTML).not.toContain("images.example.org");
+  });
+
+  it("uses the neutral hostname fallback when the local image fails", () => {
+    render(<ResourceCard resource={{
+      ...persistedResource,
+      previewImageUrl: "https://images.example.org/external.png",
+    }} />);
+
+    fireEvent.error(document.querySelector("img")!);
+
+    expect(document.querySelector("img")).toBeNull();
+    expect(screen.getByText("example.org")).toBeTruthy();
+    expect(document.documentElement.innerHTML).not.toContain("images.example.org");
+  });
+
+  it("retries the local image when its resource revision changes", () => {
+    const { rerender } = render(<ResourceCard resource={persistedResource} />);
+    fireEvent.error(document.querySelector("img")!);
+    expect(document.querySelector("img")).toBeNull();
+
+    rerender(<ResourceCard resource={{
+      ...persistedResource,
+      updatedAt: "2026-09-04T09:30:00.000Z",
+    }} />);
+
+    expect(document.querySelector("img")?.getAttribute("src")).toBe(
+      "/api/resources/resource-1/preview-image?v=2026-09-04T09%3A30%3A00.000Z"
+    );
     expect(screen.queryByText("example.org")).toBeNull();
   });
 

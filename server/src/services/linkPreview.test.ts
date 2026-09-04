@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import { once } from "node:events";
 import { lookup as osLookup } from "node:dns/promises";
 import { createServer } from "node:http";
 import type { AddressInfo, Socket } from "node:net";
+import { promisify } from "node:util";
 import { Worker } from "node:worker_threads";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -20,6 +22,7 @@ import {
 } from "./linkPreview.js";
 
 const PUBLIC_DNS_RESULT = [{ address: "93.184.216.34", family: 4 as const }];
+const execFileAsync = promisify(execFile);
 
 function previewDependencies(
   responses: Response[],
@@ -84,6 +87,50 @@ describe("RFC 9110 Content-Type parsing", () => {
 });
 
 describe("fetchLinkPreview security boundary", () => {
+  it("rejects status 600 from a real socket without crashing the process", async () => {
+    const linkPreviewModuleUrl = new URL("./linkPreview.ts", import.meta.url).href;
+    const childScript = `
+      import { once } from "node:events";
+      import { createServer } from "node:http";
+      import { fetchUsingValidatedAddresses } from ${JSON.stringify(linkPreviewModuleUrl)};
+
+      const server = createServer((_request, response) => {
+        process.stdout.write("connected\\n");
+        response.writeHead(600, { "Content-Type": "text/plain" });
+        response.end("invalid status");
+      });
+      server.listen(0, "127.0.0.1");
+      await once(server, "listening");
+      const address = server.address();
+
+      try {
+        await fetchUsingValidatedAddresses(
+          "http://status.invalid:" + address.port + "/preview",
+          {},
+          [{ address: "127.0.0.1", family: 4 }]
+        );
+        process.stdout.write("resolved\\n");
+        process.exitCode = 2;
+      } catch (error) {
+        process.stdout.write("rejected:" + (error instanceof Error ? error.message : String(error)) + "\\n");
+      } finally {
+        await new Promise((resolve, reject) => {
+          server.close((error) => error ? reject(error) : resolve());
+        });
+      }
+    `;
+
+    const result = await execFileAsync(
+      process.execPath,
+      ["--import", "tsx", "--input-type=module", "--eval", childScript],
+      { timeout: 5_000 }
+    );
+
+    expect(result.stdout).toContain("connected\n");
+    expect(result.stdout).toMatch(/rejected:.*600.*invalid/i);
+    expect(result.stdout).not.toContain("resolved");
+  });
+
   it("connects to the validated address while preserving the original host", async () => {
     let connectedAddress: string | undefined;
     let receivedHost: string | undefined;

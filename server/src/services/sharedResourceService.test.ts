@@ -138,8 +138,14 @@ class FakeResourceRepository implements SharedResourceRepository {
     this.resources.splice(index, 1);
   }
 
-  async findResourceImage(id: string): Promise<ResourceImage | null> {
-    const image = this.images.get(id);
+  async findVisibleResourceImage(userId: string, id: string): Promise<ResourceImage | null> {
+    const found = this.resources.find((candidate) => candidate.id === id);
+    const visible = found && (
+      found.isGlobal || found.subgroupIds.some((subgroupId) =>
+        (this.userSubgroups.get(userId) ?? []).includes(subgroupId)
+      )
+    );
+    const image = visible ? this.images.get(id) : null;
     return image ? { data: new Uint8Array(image.data), mimeType: image.mimeType } : null;
   }
 
@@ -317,22 +323,65 @@ describe("shared resources", () => {
     });
   });
 
-  it("returns no image for either incomplete stored preview pair", async () => {
-    const findUnique = vi.fn()
-      .mockResolvedValueOnce({ previewImageData: new Uint8Array([137]), previewImageMimeType: null })
-      .mockResolvedValueOnce({ previewImageData: null, previewImageMimeType: "image/png" });
+  it("loads a complete visible image with one byte-only audience query", async () => {
+    const image = {
+      previewImageData: new Uint8Array([137, 80, 78, 71]),
+      previewImageMimeType: "image/png",
+    };
+    const findFirst = vi.fn().mockResolvedValue(image);
     const repository = createPrismaSharedResourceRepository({
-      sharedResource: { findUnique },
+      sharedResource: { findFirst },
       subgroupMember: {},
       $transaction: vi.fn(),
     } as unknown as Parameters<typeof createPrismaSharedResourceRepository>[0]);
 
-    await expect(repository.findResourceImage("data-only")).resolves.toBeNull();
-    await expect(repository.findResourceImage("mime-only")).resolves.toBeNull();
-    expect(findUnique).toHaveBeenNthCalledWith(1, {
-      where: { id: "data-only" },
+    await expect(
+      repository.findVisibleResourceImage("teacher-1", "resource-1")
+    ).resolves.toEqual({ data: image.previewImageData, mimeType: "image/png" });
+    expect(findFirst).toHaveBeenCalledOnce();
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        id: "resource-1",
+        previewImageData: { not: null },
+        previewImageMimeType: { not: null },
+        OR: [
+          { isGlobal: true },
+          {
+            subgroups: {
+              some: {
+                subgroup: { members: { some: { userId: "teacher-1" } } },
+              },
+            },
+          },
+        ],
+      },
       select: { previewImageData: true, previewImageMimeType: true },
     });
+  });
+
+  it("collapses missing, invisible, and incomplete atomic image rows to no image", async () => {
+    const findFirst = vi.fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        previewImageData: new Uint8Array([137]),
+        previewImageMimeType: null,
+      })
+      .mockResolvedValueOnce({
+        previewImageData: null,
+        previewImageMimeType: "image/png",
+      });
+    const repository = createPrismaSharedResourceRepository({
+      sharedResource: { findFirst },
+      subgroupMember: {},
+      $transaction: vi.fn(),
+    } as unknown as Parameters<typeof createPrismaSharedResourceRepository>[0]);
+
+    await expect(repository.findVisibleResourceImage("teacher-1", "missing"))
+      .resolves.toBeNull();
+    await expect(repository.findVisibleResourceImage("teacher-1", "data-only"))
+      .resolves.toBeNull();
+    await expect(repository.findVisibleResourceImage("teacher-1", "mime-only"))
+      .resolves.toBeNull();
   });
 
   it("persists both preview image fields on repository create and update", async () => {
@@ -638,7 +687,7 @@ describe("preview persistence", () => {
       previewSiteName: null,
       previewFetchedAt: null,
     });
-    await expect(repository.findResourceImage("r1")).resolves.toBeNull();
+    expect(repository.images.has("r1")).toBe(false);
   });
 
   it("replaces persisted image bytes when an enabled resource is updated", async () => {
@@ -660,7 +709,7 @@ describe("preview persistence", () => {
 
     await service.updateResource("r1", input);
 
-    await expect(repository.findResourceImage("r1")).resolves.toEqual(replacement);
+    expect(repository.images.get("r1")).toEqual(replacement);
     expect(repository.updated[0]).toMatchObject({
       previewImageData: replacement.data,
       previewImageMimeType: "image/png",
@@ -673,10 +722,16 @@ describe("preview persistence", () => {
     ]);
     repository.images.set("resource-1", { data: new Uint8Array([1, 2]), mimeType: "image/png" });
     repository.userSubgroups.set("outside-user", ["g2"]);
+    const atomicLookup = vi.spyOn(repository, "findVisibleResourceImage");
+    const publicLookup = vi.spyOn(repository, "findResource");
+    const membershipLookup = vi.spyOn(repository, "listUserSubgroupIds");
     const service = resourceService(repository);
 
     await expect(service.getResourceImageForUser("outside-user", "resource-1"))
       .rejects.toBeInstanceOf(ResourceNotFoundError);
+    expect(atomicLookup).toHaveBeenCalledWith("outside-user", "resource-1");
+    expect(publicLookup).not.toHaveBeenCalled();
+    expect(membershipLookup).not.toHaveBeenCalled();
   });
 
   it("returns the stored image to a user in the resource audience", async () => {
@@ -686,9 +741,29 @@ describe("preview persistence", () => {
     const image = { data: new Uint8Array([1, 2]), mimeType: "image/png" };
     repository.images.set("resource-1", image);
     repository.userSubgroups.set("teacher-1", ["g1"]);
+    const atomicLookup = vi.spyOn(repository, "findVisibleResourceImage");
     const service = resourceService(repository);
 
     await expect(service.getResourceImageForUser("teacher-1", "resource-1")).resolves.toEqual(image);
+    expect(atomicLookup).toHaveBeenCalledOnce();
+  });
+
+  it("does not expose image bytes across an audience-change interleaving", async () => {
+    const repository = new FakeResourceRepository([
+      resource({ id: "resource-1", subgroupIds: ["g1"], hasPreviewImage: true }),
+    ]);
+    repository.images.set("resource-1", { data: new Uint8Array([1, 2]), mimeType: "image/png" });
+    repository.userSubgroups.set("teacher-1", ["g1"]);
+    const atomicLookup = vi.spyOn(repository, "findVisibleResourceImage").mockResolvedValue(null);
+    const publicLookup = vi.spyOn(repository, "findResource");
+    const membershipLookup = vi.spyOn(repository, "listUserSubgroupIds");
+    const service = resourceService(repository);
+
+    await expect(service.getResourceImageForUser("teacher-1", "resource-1"))
+      .rejects.toBeInstanceOf(ResourceNotFoundError);
+    expect(atomicLookup).toHaveBeenCalledWith("teacher-1", "resource-1");
+    expect(publicLookup).not.toHaveBeenCalled();
+    expect(membershipLookup).not.toHaveBeenCalled();
   });
 
   it("preserves manual content while omitting external preview images from persistence", async () => {

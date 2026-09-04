@@ -521,6 +521,12 @@ export function fetchUsingValidatedAddresses(
   const request = url.protocol === "https:" ? httpsRequest : httpRequest;
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const rejectOnce = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
     const outgoing = request(
       url,
       {
@@ -531,40 +537,50 @@ export function fetchUsingValidatedAddresses(
         signal: init.signal ?? undefined,
       },
       (incoming) => {
-        const contentTypes = incoming.headersDistinct["content-type"] ?? [];
-        if (contentTypes.length > 1) {
+        if (settled) {
           incoming.destroy();
-          reject(new Error("Preview response must not contain duplicate Content-Type headers"));
-          return;
-        }
-        const contentLengths = incoming.headersDistinct["content-length"] ?? [];
-        if (contentLengths.length > 1) {
-          incoming.destroy();
-          reject(new Error("Preview response must not contain duplicate Content-Length headers"));
           return;
         }
 
-        const headers = new Headers();
-        for (const [name, values] of Object.entries(incoming.headersDistinct)) {
-          for (const value of values ?? []) headers.append(name, value);
-        }
+        try {
+          const contentTypes = incoming.headersDistinct["content-type"] ?? [];
+          if (contentTypes.length > 1) {
+            throw new Error("Preview response must not contain duplicate Content-Type headers");
+          }
+          const contentLengths = incoming.headersDistinct["content-length"] ?? [];
+          if (contentLengths.length > 1) {
+            throw new Error("Preview response must not contain duplicate Content-Length headers");
+          }
 
-        const status = incoming.statusCode ?? 500;
-        const hasNoBody = status === 204 || status === 205 || status === 304;
-        const body = hasNoBody
-          ? null
-          : (Readable.toWeb(incoming) as ReadableStream<Uint8Array>);
-        resolve(
-          new Response(body, {
+          const headers = new Headers();
+          for (const [name, values] of Object.entries(incoming.headersDistinct)) {
+            for (const value of values ?? []) headers.append(name, value);
+          }
+
+          const status = incoming.statusCode;
+          if (typeof status !== "number" || status < 200 || status > 599) {
+            throw new Error(`Preview response status ${String(status)} is invalid`);
+          }
+          const hasNoBody = status === 204 || status === 205 || status === 304;
+          const body = hasNoBody
+            ? null
+            : (Readable.toWeb(incoming) as ReadableStream<Uint8Array>);
+          const response = new Response(body, {
             headers,
             status,
             statusText: incoming.statusMessage,
-          })
-        );
+          });
+
+          settled = true;
+          resolve(response);
+        } catch (error) {
+          rejectOnce(error);
+          incoming.destroy();
+        }
       }
     );
 
-    outgoing.once("error", reject);
+    outgoing.once("error", rejectOnce);
     outgoing.end();
   });
 }

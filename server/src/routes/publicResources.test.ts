@@ -91,6 +91,7 @@ describe("public resource routes", () => {
     expect(response.headers["content-type"]).toMatch(/^image\/png/);
     expect(response.headers["content-length"]).toBe(String(pngBytes.byteLength));
     expect(response.headers["cache-control"]).toBe("private, max-age=3600");
+    expect(response.headers.vary).toBe("Cookie");
     expect(Buffer.compare(response.body, pngBytes)).toBe(0);
   });
 

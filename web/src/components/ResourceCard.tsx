@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { SharedResource, SharedResourceDraft } from "../types";
 import { resourceCardFallback } from "./resourceForm";
 
@@ -8,24 +8,35 @@ interface Props {
   linked?: boolean;
 }
 
+function ResourcePreview({ imageSrc, fallback }: { imageSrc: string | null; fallback: string }) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  return imageSrc && !imageFailed ? (
+    <img
+      src={imageSrc}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      className="resource-card__image"
+      onError={() => setImageFailed(true)}
+    />
+  ) : (
+    <span>{fallback}</span>
+  );
+}
+
 export default function ResourceCard({ resource, children, linked = true }: Props) {
   const imageSrc = "id" in resource && resource.hasPreviewImage
-    ? `/api/resources/${encodeURIComponent(resource.id)}/preview-image`
+    ? `/api/resources/${encodeURIComponent(resource.id)}/preview-image?v=${encodeURIComponent(resource.updatedAt)}`
     : null;
   const content = (
     <>
       <div className="resource-card__preview">
-        {imageSrc ? (
-          <img
-            src={imageSrc}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className="resource-card__image"
-          />
-        ) : (
-          <span>{resourceCardFallback(resource)}</span>
-        )}
+        <ResourcePreview
+          key={imageSrc ?? "resource-fallback"}
+          imageSrc={imageSrc}
+          fallback={resourceCardFallback(resource)}
+        />
       </div>
       <div className="resource-card__body">
         <div className="flex items-start justify-between gap-3">

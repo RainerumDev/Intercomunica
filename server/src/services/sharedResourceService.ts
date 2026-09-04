@@ -114,7 +114,7 @@ export type ResourceUpdateData = Partial<
 export interface SharedResourceRepository {
   listResources(): Promise<ResourceRecord[]>;
   findResource(id: string): Promise<ResourceRecord | null>;
-  findResourceImage(id: string): Promise<ResourceImage | null>;
+  findVisibleResourceImage(userId: string, id: string): Promise<ResourceImage | null>;
   createResource(data: ResourceCreateData): Promise<ResourceRecord>;
   updateResource(id: string, data: ResourceUpdateData): Promise<ResourceRecord>;
   updateResourceSortOrder(id: string, sortOrder: number): Promise<void>;
@@ -255,16 +255,7 @@ export function createSharedResourceService(
     },
 
     async getResourceImageForUser(userId: string, resourceId: string): Promise<ResourceImage> {
-      const [resource, subgroupIds] = await Promise.all([
-        repository.findResource(resourceId),
-        repository.listUserSubgroupIds(userId),
-      ]);
-      const visible = resource && (
-        resource.isGlobal || resource.subgroupIds.some((subgroupId) => subgroupIds.includes(subgroupId))
-      );
-      if (!visible) throw new ResourceNotFoundError(resourceId);
-
-      const image = await repository.findResourceImage(resourceId);
+      const image = await repository.findVisibleResourceImage(userId, resourceId);
       if (!image) throw new ResourceNotFoundError(resourceId);
       return image;
     },
@@ -364,9 +355,23 @@ function resourceRepositoryOperations(
       return resource ? toResourceRecord(resource, await hasPreviewImage(client, id)) : null;
     },
 
-    async findResourceImage(id) {
-      const resource = await client.sharedResource.findUnique({
-        where: { id },
+    async findVisibleResourceImage(userId, id) {
+      const resource = await client.sharedResource.findFirst({
+        where: {
+          id,
+          previewImageData: { not: null },
+          previewImageMimeType: { not: null },
+          OR: [
+            { isGlobal: true },
+            {
+              subgroups: {
+                some: {
+                  subgroup: { members: { some: { userId } } },
+                },
+              },
+            },
+          ],
+        },
         select: { previewImageData: true, previewImageMimeType: true },
       });
       return resource && resource.previewImageData !== null && resource.previewImageMimeType !== null

@@ -22,6 +22,7 @@ publicResourcesRouter.get(
         "Content-Length": String(data.byteLength),
         "Cache-Control": "private, max-age=3600",
       });
+      res.vary("Cookie");
       res.send(data);
     } catch (error) {
       if (error instanceof ResourceNotFoundError) {
