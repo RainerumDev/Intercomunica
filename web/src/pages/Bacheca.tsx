@@ -5,6 +5,7 @@ import { EventStream } from "../components/EventStream";
 import type { BachecaPayload } from "../types";
 
 const fullDateFormat = new Intl.DateTimeFormat("it-IT", {
+  timeZone: "Europe/Rome",
   weekday: "long",
   day: "numeric",
   month: "long",

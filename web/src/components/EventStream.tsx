@@ -9,11 +9,13 @@ import type { BachecaEvent, BachecaSection } from "../types";
 const UPCOMING_STEP = 6;
 
 const eventDateFormat = new Intl.DateTimeFormat("it-IT", {
+  timeZone: "Europe/Rome",
   weekday: "short",
   day: "numeric",
   month: "long",
 });
 const eventTimeFormat = new Intl.DateTimeFormat("it-IT", {
+  timeZone: "Europe/Rome",
   hour: "2-digit",
   minute: "2-digit",
 });

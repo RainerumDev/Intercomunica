@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api";
 import type { BachecaPayload } from "../types";
 import Bacheca from "./Bacheca";
+
+const originalTimeZone = vi.hoisted(() => {
+  const timezone = process.env.TZ;
+  process.env.TZ = "UTC";
+  return timezone;
+});
 
 vi.mock("../auth", () => ({
   useAuth: () => ({ me: { name: "Anna Rossi" } }),
@@ -41,7 +47,26 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+afterAll(() => {
+  if (originalTimeZone === undefined) delete process.env.TZ;
+  else process.env.TZ = originalTimeZone;
+});
+
 describe("Bacheca", () => {
+  it("formats the full header date in Europe/Rome when the host timezone is UTC", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-09-04T22:30:00.000Z"));
+      vi.spyOn(api, "get").mockResolvedValue(payloadWithEvents);
+
+      render(<Bacheca />);
+
+      expect(screen.getByText("sabato 5 settembre 2026")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("requests and renders only the event payload", async () => {
     const get = vi.spyOn(api, "get").mockResolvedValue(payloadWithEvents);
     render(<Bacheca />);

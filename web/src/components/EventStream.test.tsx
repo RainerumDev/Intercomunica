@@ -2,9 +2,15 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { BachecaEvent, BachecaSection } from "../types";
 import { EventStream } from "./EventStream";
+
+const originalTimeZone = vi.hoisted(() => {
+  const timezone = process.env.TZ;
+  process.env.TZ = "UTC";
+  return timezone;
+});
 
 const now = new Date("2026-09-04T09:00:00+02:00");
 
@@ -46,12 +52,18 @@ const distant = event(20, {
   endsAt: "2026-12-20T11:00:00+01:00",
   tags: ["Riunioni"],
 });
+const collegiEvents = Array.from({ length: 7 }, (_, index) => event(index + 9, {
+  id: `collegi-${index + 1}`,
+  title: `Collegio numero ${index + 1}`,
+  description: index === 0 ? "Riunione in biblioteca" : null,
+  tags: ["Collegi"],
+}));
 
 const sections: BachecaSection[] = [
   {
     tag: "Collegi",
     color: "#b91c1c",
-    events: [todayFirst, multiTag],
+    events: [todayFirst, multiTag, ...collegiEvents],
   },
   {
     tag: "Riunioni",
@@ -61,6 +73,10 @@ const sections: BachecaSection[] = [
 ];
 
 afterEach(cleanup);
+afterAll(() => {
+  if (originalTimeZone === undefined) delete process.env.TZ;
+  else process.env.TZ = originalTimeZone;
+});
 
 describe("EventStream", () => {
   it("shows every event today and only the first six upcoming events without duplicates", () => {
@@ -91,10 +107,34 @@ describe("EventStream", () => {
 
     await user.click(screen.getByRole("button", { name: "Mostra altri eventi" }));
     await user.click(screen.getByRole("button", { name: "Collegi" }));
-    expect(screen.queryByRole("heading", { name: "Evento numero 7" })).toBeNull();
+    expect(screen.getAllByTestId("event-row")).toHaveLength(7);
+    expect(screen.queryByRole("heading", { name: "Collegio numero 7" })).toBeNull();
 
-    await user.type(screen.getByRole("searchbox", { name: "Cerca negli eventi" }), "riunione");
-    expect(screen.getByRole("heading", { name: "Riunione multi-tag" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Mostra altri eventi" }));
+    expect(screen.getByRole("heading", { name: "Collegio numero 7" })).toBeTruthy();
+
+    const search = screen.getByRole("searchbox", { name: "Cerca negli eventi" });
+    await user.type(search, "biblioteca");
+    expect(screen.getByRole("heading", { name: "Collegio numero 1" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Evento distante di dicembre" })).toBeNull();
+
+    await user.clear(search);
+    expect(screen.queryByRole("heading", { name: "Collegio numero 7" })).toBeNull();
+  });
+
+  it("displays Rome calendar dates and times when the host timezone is UTC", () => {
+    render(<EventStream sections={[{
+      tag: "Riunioni",
+      color: "#1d4ed8",
+      events: [event(0, {
+        id: "rome-boundary",
+        title: "Evento oltre la mezzanotte romana",
+        startsAt: "2026-09-04T22:30:00.000Z",
+        endsAt: "2026-09-04T23:30:00.000Z",
+      })],
+    }]} now={now} />);
+
+    expect(screen.getByText("sab 5 settembre")).toBeTruthy();
+    expect(screen.getByText("00:30–01:30")).toBeTruthy();
   });
 });
