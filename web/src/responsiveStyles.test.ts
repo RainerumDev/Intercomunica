@@ -34,7 +34,9 @@ function ruleDeclarations(selector: string): string {
 
 function propertyValue(declarations: string, property: string): string {
   const escapedProperty = property.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const value = declarations.match(new RegExp(`${escapedProperty}:\\s*([^;]+)`, "u"))?.[1]?.trim();
+  const value = declarations.match(
+    new RegExp(`(?:^|;)\\s*${escapedProperty}\\s*:\\s*([^;]+)`, "u")
+  )?.[1]?.trim();
   if (!value) throw new Error(`Missing CSS property ${property}`);
   return value;
 }
@@ -61,6 +63,14 @@ function evaluateViewportHeight(value: string, viewportHeight: number, safeAreaI
     .reduce((total, [, amount, unit]) => total + Number(amount) * (unit === "rem" ? 16 : 1), 0);
   return viewportHeight - fixedSubtractions - safeAreaInset;
 }
+
+describe("responsive CSS test helpers", () => {
+  it("matches complete declaration names rather than property suffixes", () => {
+    expect(propertyValue("border-top: 1px solid; top: 5rem;", "top")).toBe("5rem");
+    expect(propertyValue("max-height: 99px; min-height: 44px;", "min-height")).toBe("44px");
+    expect(() => propertyValue("max-height: 99px;", "height")).toThrow("Missing CSS property height");
+  });
+});
 
 describe("mobile responsive controls", () => {
   it("gives Bacheca and Risorse search controls and event expansion 44px targets", () => {
@@ -111,6 +121,30 @@ describe("responsive teacher directory", () => {
 
     const body = ruleDeclarationsFrom(css, ".teacher-directory__body");
     expect(body).toContain("grid-template-columns: minmax(0, 1fr) 44px");
+  });
+
+  it("returns the rail to normal flow immediately below its safe sticky-height boundary", () => {
+    const shortHeightMedia = css.match(
+      /@media \(max-width: 767px\) and \(max-height: ([\d.]+)px\)/u
+    );
+    expect(shortHeightMedia).not.toBeNull();
+    const boundary = Number(shortHeightMedia?.[1]);
+    const safeAreaInset = 34;
+    const stickyOffset = Number.parseFloat(cascadedProperty(".teacher-alphabet", "top")) * 16;
+    const navTargetHeight = Number.parseFloat(propertyValue(ruleDeclarations(".portal-nav__link"), "min-height"));
+    const navBorderHeight = Number.parseFloat(propertyValue(ruleDeclarations(".portal-nav"), "border-top"));
+    const maxHeight = cascadedProperty(".teacher-alphabet", "max-height");
+    const minimumStickyHeight = stickyOffset + navTargetHeight + navBorderHeight + safeAreaInset + 44;
+
+    expect(boundary).toBeGreaterThanOrEqual(minimumStickyHeight);
+    expect(evaluateViewportHeight(maxHeight, boundary + 1, safeAreaInset)).toBeGreaterThanOrEqual(44);
+    expect(evaluateViewportHeight(maxHeight, boundary - 1, safeAreaInset)).toBeLessThan(44);
+
+    const fallbackCss = blockContents(css, shortHeightMedia?.[0] ?? "");
+    const fallback = ruleDeclarationsFrom(fallbackCss, ".teacher-alphabet");
+    expect(propertyValue(fallback, "position")).toBe("static");
+    expect(propertyValue(fallback, "max-height")).toBe("none");
+    expect(propertyValue(fallback, "overflow-y")).toBe("visible");
   });
 
   it("lets a tall desktop teacher detail continue in normal document flow", () => {
