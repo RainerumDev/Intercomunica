@@ -187,6 +187,151 @@ describe("resourceInputSchema", () => {
 });
 
 describe("shared resources", () => {
+  it("reads public records without selecting preview bytes and probes complete image pairs by ID", async () => {
+    const findMany = vi.fn()
+      .mockResolvedValueOnce([{
+        ...resource({ id: "complete-preview" }),
+        subgroups: [],
+      }])
+      .mockResolvedValueOnce([{ id: "complete-preview" }]);
+    const repository = createPrismaSharedResourceRepository({
+      sharedResource: { findMany },
+      subgroupMember: {},
+      $transaction: vi.fn(),
+    } as unknown as Parameters<typeof createPrismaSharedResourceRepository>[0]);
+
+    await expect(repository.listResources()).resolves.toMatchObject([
+      { id: "complete-preview", hasPreviewImage: true },
+    ]);
+    expect(findMany).toHaveBeenNthCalledWith(1, {
+      select: expect.objectContaining({
+        id: true,
+        subgroups: { select: { subgroupId: true } },
+      }),
+    });
+    const publicSelect = findMany.mock.calls[0][0].select;
+    expect(publicSelect).not.toHaveProperty("previewImageData");
+    expect(publicSelect).not.toHaveProperty("previewImageMimeType");
+    expect(findMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        previewImageData: { not: null },
+        previewImageMimeType: { not: null },
+      },
+      select: { id: true },
+    });
+  });
+
+  it("reports no preview image when the persisted pair is incomplete", async () => {
+    const findMany = vi.fn()
+      .mockResolvedValueOnce([
+        { ...resource({ id: "data-only" }), subgroups: [] },
+        { ...resource({ id: "mime-only" }), subgroups: [] },
+      ])
+      .mockResolvedValueOnce([]);
+    const repository = createPrismaSharedResourceRepository({
+      sharedResource: { findMany },
+      subgroupMember: {},
+      $transaction: vi.fn(),
+    } as unknown as Parameters<typeof createPrismaSharedResourceRepository>[0]);
+
+    await expect(repository.listResources()).resolves.toMatchObject([
+      { id: "data-only", hasPreviewImage: false },
+      { id: "mime-only", hasPreviewImage: false },
+    ]);
+  });
+
+  it("reads a single public record without selecting preview bytes", async () => {
+    const findUnique = vi.fn().mockResolvedValue({ ...resource({ id: "resource-1" }), subgroups: [] });
+    const findFirst = vi.fn().mockResolvedValue({ id: "resource-1" });
+    const repository = createPrismaSharedResourceRepository({
+      sharedResource: { findUnique, findFirst },
+      subgroupMember: {},
+      $transaction: vi.fn(),
+    } as unknown as Parameters<typeof createPrismaSharedResourceRepository>[0]);
+
+    await expect(repository.findResource("resource-1")).resolves.toMatchObject({
+      id: "resource-1", hasPreviewImage: true,
+    });
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { id: "resource-1" },
+      select: expect.any(Object),
+    });
+    const publicSelect = findUnique.mock.calls[0][0].select;
+    expect(publicSelect).not.toHaveProperty("previewImageData");
+    expect(publicSelect).not.toHaveProperty("previewImageMimeType");
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        id: "resource-1",
+        previewImageData: { not: null },
+        previewImageMimeType: { not: null },
+      },
+      select: { id: true },
+    });
+  });
+
+  it("returns no image for either incomplete stored preview pair", async () => {
+    const findUnique = vi.fn()
+      .mockResolvedValueOnce({ previewImageData: new Uint8Array([137]), previewImageMimeType: null })
+      .mockResolvedValueOnce({ previewImageData: null, previewImageMimeType: "image/png" });
+    const repository = createPrismaSharedResourceRepository({
+      sharedResource: { findUnique },
+      subgroupMember: {},
+      $transaction: vi.fn(),
+    } as unknown as Parameters<typeof createPrismaSharedResourceRepository>[0]);
+
+    await expect(repository.findResourceImage("data-only")).resolves.toBeNull();
+    await expect(repository.findResourceImage("mime-only")).resolves.toBeNull();
+    expect(findUnique).toHaveBeenNthCalledWith(1, {
+      where: { id: "data-only" },
+      select: { previewImageData: true, previewImageMimeType: true },
+    });
+  });
+
+  it("persists both preview image fields on repository create and update", async () => {
+    const previewImageData = new Uint8Array([137, 80, 78, 71]);
+    const create = vi.fn().mockResolvedValue({
+      ...resource({ id: "created" }),
+      previewImageData,
+      previewImageMimeType: "image/png",
+      subgroups: [],
+    });
+    const update = vi.fn().mockResolvedValue({
+      ...resource({ id: "updated" }),
+      previewImageData,
+      previewImageMimeType: "image/png",
+      subgroups: [],
+    });
+    const repository = createPrismaSharedResourceRepository({
+      sharedResource: { create, update, findFirst: vi.fn().mockResolvedValue({ id: "updated" }) },
+      subgroupMember: {},
+      $transaction: vi.fn(),
+    } as unknown as Parameters<typeof createPrismaSharedResourceRepository>[0]);
+    const createData = {
+      ...resource({ id: "ignored" }),
+      previewImageData,
+      previewImageMimeType: "image/png",
+    };
+
+    await repository.createResource(createData);
+    await repository.updateResource("updated", {
+      previewImageData,
+      previewImageMimeType: "image/png",
+    });
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        previewImageData: Buffer.from(previewImageData),
+        previewImageMimeType: "image/png",
+      }),
+    }));
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        previewImageData: Buffer.from(previewImageData),
+        previewImageMimeType: "image/png",
+      }),
+    }));
+  });
+
   it("serializes stored preview bytes as a boolean without exposing the bytes", async () => {
     const previewImageData = new Uint8Array([137, 80, 78, 71]);
     const repository = createPrismaSharedResourceRepository({

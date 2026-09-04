@@ -1,4 +1,4 @@
-import { PrismaClient, type SharedResource, type SharedResourceSubgroup } from "@prisma/client";
+import { PrismaClient, type Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { serializableTransaction } from "../db/serializableTransaction.js";
@@ -241,9 +241,25 @@ export function createSharedResourceService(
 
 type PrismaResourceClient = Pick<PrismaClient, "sharedResource" | "subgroupMember">;
 
-type PrismaResourceWithSubgroups = SharedResource & { subgroups: SharedResourceSubgroup[] };
+const publicResourceSelect = {
+  id: true,
+  url: true,
+  title: true,
+  description: true,
+  previewEnabled: true,
+  previewImageUrl: true,
+  previewSiteName: true,
+  previewFetchedAt: true,
+  isGlobal: true,
+  sortOrder: true,
+  createdAt: true,
+  updatedAt: true,
+  subgroups: { select: { subgroupId: true } },
+} satisfies Prisma.SharedResourceSelect;
 
-function toResourceRecord(resource: PrismaResourceWithSubgroups): ResourceRecord {
+type PrismaPublicResource = Prisma.SharedResourceGetPayload<{ select: typeof publicResourceSelect }>;
+
+function toResourceRecord(resource: PrismaPublicResource, hasPreviewImage: boolean): ResourceRecord {
   return {
     id: resource.id,
     url: resource.url,
@@ -251,7 +267,7 @@ function toResourceRecord(resource: PrismaResourceWithSubgroups): ResourceRecord
     description: resource.description,
     previewEnabled: resource.previewEnabled,
     previewImageUrl: resource.previewImageUrl,
-    hasPreviewImage: resource.previewImageData !== null && resource.previewImageMimeType !== null,
+    hasPreviewImage,
     previewSiteName: resource.previewSiteName,
     previewFetchedAt: resource.previewFetchedAt,
     isGlobal: resource.isGlobal,
@@ -262,18 +278,44 @@ function toResourceRecord(resource: PrismaResourceWithSubgroups): ResourceRecord
   };
 }
 
+async function previewImageResourceIds(client: PrismaResourceClient): Promise<Set<string>> {
+  const resources = await client.sharedResource.findMany({
+    where: {
+      previewImageData: { not: null },
+      previewImageMimeType: { not: null },
+    },
+    select: { id: true },
+  });
+  return new Set(resources.map((resource) => resource.id));
+}
+
+async function hasPreviewImage(client: PrismaResourceClient, id: string): Promise<boolean> {
+  const resource = await client.sharedResource.findFirst({
+    where: {
+      id,
+      previewImageData: { not: null },
+      previewImageMimeType: { not: null },
+    },
+    select: { id: true },
+  });
+  return resource !== null;
+}
+
 function resourceRepositoryOperations(
   client: PrismaResourceClient
 ): Omit<SharedResourceRepository, "transaction" | "audienceTransaction"> {
   return {
     async listResources() {
-      const resources = await client.sharedResource.findMany({ include: { subgroups: true } });
-      return resources.map(toResourceRecord);
+      const [resources, imageResourceIds] = await Promise.all([
+        client.sharedResource.findMany({ select: publicResourceSelect }),
+        previewImageResourceIds(client),
+      ]);
+      return resources.map((resource) => toResourceRecord(resource, imageResourceIds.has(resource.id)));
     },
 
     async findResource(id) {
-      const resource = await client.sharedResource.findUnique({ where: { id }, include: { subgroups: true } });
-      return resource ? toResourceRecord(resource) : null;
+      const resource = await client.sharedResource.findUnique({ where: { id }, select: publicResourceSelect });
+      return resource ? toResourceRecord(resource, await hasPreviewImage(client, id)) : null;
     },
 
     async findResourceImage(id) {
@@ -302,9 +344,12 @@ function resourceRepositoryOperations(
           sortOrder: data.sortOrder,
           subgroups: { create: data.subgroupIds.map((subgroupId) => ({ subgroupId })) },
         },
-        include: { subgroups: true },
+        select: publicResourceSelect,
       });
-      return toResourceRecord(resource);
+      return toResourceRecord(
+        resource,
+        data.previewImageData !== null && data.previewImageMimeType !== null
+      );
     },
 
     async updateResource(id, data) {
@@ -320,9 +365,9 @@ function resourceRepositoryOperations(
             ? {}
             : { subgroups: { deleteMany: {}, create: subgroupIds.map((subgroupId) => ({ subgroupId })) } }),
         },
-        include: { subgroups: true },
+        select: publicResourceSelect,
       });
-      return toResourceRecord(resource);
+      return toResourceRecord(resource, await hasPreviewImage(client, id));
     },
 
     async deleteResource(id) {

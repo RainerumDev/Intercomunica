@@ -55,6 +55,7 @@ function resource(id: string, sortOrder: number): ResourceRecord {
   return {
     id,
     ...resourceInput,
+    hasPreviewImage: false,
     sortOrder,
     previewFetchedAt: new Date("2026-09-01T09:00:00.000Z"),
     createdAt: new Date("2026-09-01T08:00:00.000Z"),

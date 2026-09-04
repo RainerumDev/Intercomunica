@@ -32,6 +32,7 @@ const visibleResource = {
   description: null,
   previewEnabled: true,
   previewImageUrl: null,
+  hasPreviewImage: true,
   previewSiteName: "Example",
   previewFetchedAt: "2026-09-01T09:00:00.000Z",
   isGlobal: true,
@@ -58,6 +59,7 @@ describe("public resource routes", () => {
     const response = await request(createApp()).get("/api/resources").set("Cookie", teacherCookie);
 
     expect(response).toMatchObject({ status: 200, body: [visibleResource] });
+    expect(response.body[0]).toHaveProperty("hasPreviewImage", true);
     expect(resourceOperations.listResourcesForUser).toHaveBeenCalledWith("teacher-1");
   });
 
