@@ -47,6 +47,8 @@ class FakeResourceRepository implements SharedResourceRepository {
   resources: ResourceRecord[];
   userSubgroups = new Map<string, string[]>();
   audienceTransactions = 0;
+  resourceUpdateCalls = 0;
+  sortOrderUpdates: Array<[string, number]> = [];
   private nextId = 1;
 
   constructor(resources: ResourceRecord[] = []) {
@@ -77,6 +79,7 @@ class FakeResourceRepository implements SharedResourceRepository {
     id: string,
     data: Parameters<SharedResourceRepository["updateResource"]>[1]
   ): Promise<ResourceRecord> {
+    this.resourceUpdateCalls++;
     const index = this.resources.findIndex((candidate) => candidate.id === id);
     if (index === -1) throw new Error(`Resource ${id} was not found`);
     const updated = resource({
@@ -88,6 +91,18 @@ class FakeResourceRepository implements SharedResourceRepository {
     });
     this.resources[index] = updated;
     return cloneResource(updated);
+  }
+
+  async updateResourceSortOrder(id: string, sortOrder: number): Promise<void> {
+    const index = this.resources.findIndex((candidate) => candidate.id === id);
+    if (index === -1) throw new Error(`Resource ${id} was not found`);
+    this.resources[index] = resource({
+      ...this.resources[index],
+      id,
+      sortOrder,
+      updatedAt: new Date(baseTime.getTime() + 1000),
+    });
+    this.sortOrderUpdates.push([id, sortOrder]);
   }
 
   async deleteResource(id: string): Promise<void> {
@@ -332,6 +347,25 @@ describe("shared resources", () => {
     }));
   });
 
+  it("updates only sort order without a preview image probe", async () => {
+    const update = vi.fn().mockResolvedValue({ id: "resource-1" });
+    const findFirst = vi.fn();
+    const repository = createPrismaSharedResourceRepository({
+      sharedResource: { update, findFirst },
+      subgroupMember: {},
+      $transaction: vi.fn(),
+    } as unknown as Parameters<typeof createPrismaSharedResourceRepository>[0]);
+
+    await repository.updateResourceSortOrder("resource-1", 4);
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "resource-1" },
+      data: { sortOrder: 4 },
+      select: { id: true },
+    });
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
   it("serializes stored preview bytes as a boolean without exposing the bytes", async () => {
     const previewImageData = new Uint8Array([137, 80, 78, 71]);
     const repository = createPrismaSharedResourceRepository({
@@ -457,6 +491,8 @@ describe("shared resources", () => {
     expect((await repository.listResources()).map((item) => [item.id, item.sortOrder])).toEqual([
       ["r1", 0], ["r3", 1],
     ]);
+    expect(repository.sortOrderUpdates).toEqual([["r3", 1]]);
+    expect(repository.resourceUpdateCalls).toBe(0);
   });
 
   it("classifies an update of a missing resource as a not-found domain error", async () => {
@@ -606,6 +642,8 @@ describe("reorderResources", () => {
     expect((await repository.listResources()).sort((left, right) => left.sortOrder - right.sortOrder)
       .map((item) => [item.id, item.sortOrder]))
       .toEqual([["r3", 0], ["r1", 1], ["r2", 2]]);
+    expect(repository.sortOrderUpdates).toEqual([["r3", 0], ["r1", 1], ["r2", 2]]);
+    expect(repository.resourceUpdateCalls).toBe(0);
 
     const persisted = await repository.listResources();
     await expect(service.reorderResources(["r3", "r1"])).rejects.toMatchObject({

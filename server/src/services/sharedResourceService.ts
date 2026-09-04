@@ -110,6 +110,7 @@ export interface SharedResourceRepository {
   findResourceImage(id: string): Promise<ResourceImage | null>;
   createResource(data: ResourceCreateData): Promise<ResourceRecord>;
   updateResource(id: string, data: ResourceUpdateData): Promise<ResourceRecord>;
+  updateResourceSortOrder(id: string, sortOrder: number): Promise<void>;
   deleteResource(id: string): Promise<void>;
   listUserSubgroupIds(userId: string): Promise<string[]>;
   transaction<T>(work: (repository: SharedResourceRepository) => Promise<T>): Promise<T>;
@@ -202,7 +203,7 @@ export function createSharedResourceService(
           remaining.map((resource, sortOrder) =>
             resource.sortOrder === sortOrder
               ? undefined
-              : transaction.updateResource(resource.id, { sortOrder })
+              : transaction.updateResourceSortOrder(resource.id, sortOrder)
           )
         );
       });
@@ -232,7 +233,7 @@ export function createSharedResourceService(
           throw new InvalidResourceOrderError();
         }
 
-        await Promise.all(parsedIds.map((id, sortOrder) => transaction.updateResource(id, { sortOrder })));
+        await Promise.all(parsedIds.map((id, sortOrder) => transaction.updateResourceSortOrder(id, sortOrder)));
         return sortedResources(await transaction.listResources());
       });
     },
@@ -368,6 +369,14 @@ function resourceRepositoryOperations(
         select: publicResourceSelect,
       });
       return toResourceRecord(resource, await hasPreviewImage(client, id));
+    },
+
+    async updateResourceSortOrder(id, sortOrder) {
+      await client.sharedResource.update({
+        where: { id },
+        data: { sortOrder },
+        select: { id: true },
+      });
     },
 
     async deleteResource(id) {
