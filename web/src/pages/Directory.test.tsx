@@ -3,6 +3,7 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import type { Member, Subgroup } from "../types";
 import Directory from "./Directory";
@@ -34,7 +35,28 @@ const subgroup: Subgroup = {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  Object.defineProperty(window, "scrollY", { configurable: true, value: 0 });
 });
+
+function RouterProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output aria-label="Posizione corrente">{location.pathname}{location.search}</output>
+      <button type="button" onClick={() => navigate(-1)}>Cronologia indietro</button>
+    </>
+  );
+}
+
+function renderDirectory(initialEntry = "/directory") {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Directory />
+      <RouterProbe />
+    </MemoryRouter>
+  );
+}
 
 describe("Directory subgroup editor dialog", () => {
   it("labels the modal, traps Tab, closes on Escape, and restores trigger focus", async () => {
@@ -44,7 +66,7 @@ describe("Directory subgroup editor dialog", () => {
       if (path === "/api/subgroups") return Promise.resolve([subgroup]);
       throw new Error(`Unexpected GET ${path}`);
     }) as typeof api.get);
-    render(<Directory />);
+    renderDirectory("/directory?tab=groups");
     const trigger = await screen.findByRole("button", { name: "Modifica sottogruppo" });
     await user.click(trigger);
 
@@ -130,7 +152,7 @@ describe("Directory teacher grouping", () => {
       throw new Error(`Unexpected GET ${path}`);
     }) as typeof api.get);
 
-    render(<Directory />);
+    renderDirectory();
 
     const directory = await screen.findByRole("region", { name: "Docenti" });
     const headings = within(directory)
@@ -161,5 +183,123 @@ describe("Directory teacher grouping", () => {
 
     const ungrouped = within(directory).getByRole("table", { name: "Docenti senza sottogruppo" });
     expect(within(ungrouped).getByText("carlo@example.edu")).not.toBeNull();
+  });
+});
+
+describe("Directory shell state", () => {
+  it("pushes tab changes to history and restores the prior tab with browser Back", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "get").mockImplementation(((path: string) => {
+      if (path === "/api/users") return Promise.resolve([member]);
+      if (path === "/api/subgroups") return Promise.resolve([subgroup]);
+      throw new Error(`Unexpected GET ${path}`);
+    }) as typeof api.get);
+
+    renderDirectory("/directory?tab=groups");
+
+    const groupsTab = await screen.findByRole("tab", { name: /Gruppi/ });
+    expect(groupsTab.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("searchbox", { name: "Cerca gruppi" })).not.toBeNull();
+    expect(document.getElementById("directory-panel-groups")?.hasAttribute("hidden")).toBe(false);
+    expect(document.getElementById("directory-panel-teachers")?.hasAttribute("hidden")).toBe(true);
+
+    await user.click(screen.getByRole("tab", { name: /Docenti/ }));
+
+    expect(screen.getByRole("tab", { name: /Docenti/ }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("searchbox", { name: "Cerca docenti" })).not.toBeNull();
+    expect(screen.getByLabelText("Posizione corrente").textContent).toBe("/directory?tab=teachers");
+
+    await user.click(screen.getByRole("button", { name: "Cronologia indietro" }));
+
+    expect(screen.getByRole("tab", { name: /Gruppi/ }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByLabelText("Posizione corrente").textContent).toBe("/directory?tab=groups");
+  });
+
+  it("keeps independent queries while switching tabs", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "get").mockImplementation(((path: string) => {
+      if (path === "/api/users") return Promise.resolve([member]);
+      if (path === "/api/subgroups") return Promise.resolve([subgroup]);
+      throw new Error(`Unexpected GET ${path}`);
+    }) as typeof api.get);
+
+    renderDirectory("/directory?tab=groups");
+    const groupSearch = await screen.findByRole("searchbox", { name: "Cerca gruppi" });
+    await user.type(groupSearch, "uno");
+    await user.click(screen.getByRole("tab", { name: /Docenti/ }));
+    const teacherSearch = screen.getByRole("searchbox", { name: "Cerca docenti" });
+    await user.type(teacherSearch, "docente");
+    await user.click(screen.getByRole("tab", { name: /Gruppi/ }));
+    expect(screen.getByRole("searchbox", { name: "Cerca gruppi" }).getAttribute("value")).toBe("uno");
+    await user.click(screen.getByRole("tab", { name: /Docenti/ }));
+    expect(screen.getByRole("searchbox", { name: "Cerca docenti" }).getAttribute("value")).toBe("docente");
+  });
+
+  it.each(["/directory", "/directory?tab=invalid"])(
+    "falls back to Docenti for %s",
+    async (initialEntry) => {
+      vi.spyOn(api, "get").mockImplementation(((path: string) => {
+        if (path === "/api/users") return Promise.resolve([member]);
+        if (path === "/api/subgroups") return Promise.resolve([subgroup]);
+        throw new Error(`Unexpected GET ${path}`);
+      }) as typeof api.get);
+
+      renderDirectory(initialEntry);
+
+      expect((await screen.findByRole("tab", { name: /Docenti/ })).getAttribute("aria-selected")).toBe("true");
+      expect(screen.getByRole("searchbox", { name: "Cerca docenti" })).not.toBeNull();
+    }
+  );
+
+  it("opens an explicitly selected mobile detail and restores query and scroll on return", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "get").mockImplementation(((path: string) => {
+      if (path === "/api/users") return Promise.resolve([member]);
+      if (path === "/api/subgroups") return Promise.resolve([subgroup]);
+      throw new Error(`Unexpected GET ${path}`);
+    }) as typeof api.get);
+
+    renderDirectory();
+    const search = await screen.findByRole("searchbox", { name: "Cerca docenti" });
+    await user.type(search, "docente");
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 216 });
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+
+    const selectedRow = screen.getByRole("button", { name: "Mostra dettagli di Docente" });
+    await user.click(selectedRow);
+
+    expect(screen.getByTestId("directory-layout").classList.contains("directory-layout--detail-open")).toBe(true);
+    expect(screen.getByRole("heading", { name: "Docente" })).not.toBeNull();
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" }));
+    const back = screen.getByRole("button", { name: "Torna a tutti i docenti" });
+    expect(document.activeElement).toBe(back);
+    await user.click(back);
+
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 216, behavior: "auto" }));
+    expect(document.activeElement).toBe(selectedRow);
+    expect(screen.getByRole("searchbox", { name: "Cerca docenti" }).getAttribute("value")).toBe("docente");
+    expect(screen.getByTestId("directory-layout").classList.contains("directory-layout--detail-open")).toBe(false);
+  });
+
+  it("opens and closes the contextual group detail without clearing its query", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "get").mockImplementation(((path: string) => {
+      if (path === "/api/users") return Promise.resolve([member]);
+      if (path === "/api/subgroups") return Promise.resolve([subgroup]);
+      throw new Error(`Unexpected GET ${path}`);
+    }) as typeof api.get);
+
+    renderDirectory("/directory?tab=groups");
+    const search = await screen.findByRole("searchbox", { name: "Cerca gruppi" });
+    await user.type(search, "uno");
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    await user.click(screen.getByRole("button", { name: "Mostra dettagli di Gruppo uno" }));
+
+    expect(screen.getByTestId("directory-layout").classList.contains("directory-layout--detail-open")).toBe(true);
+    expect(screen.getByRole("heading", { name: "Gruppo uno" })).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Torna a tutti i gruppi" }));
+
+    expect(screen.getByRole("searchbox", { name: "Cerca gruppi" }).getAttribute("value")).toBe("uno");
+    expect(screen.getByTestId("directory-layout").classList.contains("directory-layout--detail-open")).toBe(false);
   });
 });

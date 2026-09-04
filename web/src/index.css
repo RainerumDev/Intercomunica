@@ -1015,6 +1015,96 @@ button {
   display: grid;
 }
 
+.page--directory {
+  gap: 1.25rem;
+}
+
+.directory-layout,
+.directory-master,
+.directory-list-pane,
+.directory-detail-pane {
+  min-width: 0;
+}
+
+.directory-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.directory-tabs__tab {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  padding: 0.65rem 0.75rem;
+  color: var(--muted);
+  background: transparent;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.directory-tabs__tab[aria-selected="true"] {
+  border-bottom-color: var(--brand);
+  color: var(--brand-hover);
+}
+
+.directory-tabs__count {
+  display: inline-grid;
+  min-width: 1.6rem;
+  min-height: 1.6rem;
+  place-items: center;
+  border-radius: 999px;
+  padding-inline: 0.35rem;
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: 0.75rem;
+}
+
+.directory-list-pane {
+  scroll-margin-top: 1rem;
+}
+
+.directory-detail-pane {
+  display: none;
+}
+
+.directory-layout--detail-open .directory-master {
+  display: none;
+}
+
+.directory-layout--detail-open .directory-detail-pane {
+  display: block;
+}
+
+.directory-detail-pane__back {
+  min-height: 44px;
+  margin-bottom: 0.75rem;
+  border: 0;
+  padding: 0.5rem 0;
+  background: transparent;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.directory-selection-button {
+  display: grid;
+  min-height: 44px;
+  width: 100%;
+  align-content: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
 .directory-sections {
   gap: 2rem;
 }
@@ -1058,6 +1148,24 @@ button {
 .directory-empty {
   padding: 2rem 1rem;
   text-align: center;
+}
+
+@media (min-width: 1024px) {
+  .directory-layout {
+    display: grid;
+    grid-template-columns: 390px minmax(0, 1fr);
+    align-items: start;
+    gap: clamp(1.5rem, 3vw, 2.5rem);
+  }
+
+  .directory-layout--detail-open .directory-master,
+  .directory-detail-pane {
+    display: block;
+  }
+
+  .directory-detail-pane__back {
+    display: none;
+  }
 }
 
 .dialog-panel {
