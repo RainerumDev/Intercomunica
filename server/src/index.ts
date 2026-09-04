@@ -20,6 +20,7 @@ import { wipRouter } from "./routes/wip.js";
 import { googleCalendarRouter } from "./routes/googleCalendar.js";
 import { calendarFeedRouter, calendarLinksRouter } from "./routes/calendarFeed.js";
 import { resourcesRouter } from "./routes/resources.js";
+import { publicResourcesRouter } from "./routes/publicResources.js";
 import { startGeneralCalendarScheduler } from "./services/generalCalendarSync.js";
 import { checkDatabase } from "./health.js";
 
@@ -43,6 +44,7 @@ export function createApp(): express.Express {
   app.use("/api/auth", authRouter);
   app.use("/api/google-calendar", googleCalendarRouter);
   app.use("/api/admin/resources", resourcesRouter);
+  app.use("/api/resources", publicResourcesRouter);
   app.use("/api/admin", adminRouter);
   app.use("/api/subgroups", subgroupsRouter);
   app.use("/api/users", usersRouter);

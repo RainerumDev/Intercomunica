@@ -5,7 +5,7 @@ import { h } from "./helpers.js";
 
 export const bachecaRouter = Router();
 
-/** Flusso 5 — personalized resources and event sections (max 3 upcoming events per TAG). */
+/** Flusso 5 — personalized upcoming event sections. */
 bachecaRouter.get(
   "/",
   requireAuth,

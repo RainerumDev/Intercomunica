@@ -1,5 +1,4 @@
 import { prisma } from "../db.js";
-import { listResourcesForUser, type ResourceRecord } from "./sharedResourceService.js";
 
 export interface BachecaEvent {
   id: string;
@@ -19,15 +18,11 @@ export interface BachecaSection {
   events: BachecaEvent[];
 }
 
-export type BachecaResource = ResourceRecord;
-
 export interface BachecaPayload {
-  resources: BachecaResource[];
   eventSections: BachecaSection[];
 }
 
 export const UNTAGGED_SECTION = "ALTRO";
-export const EVENTS_PER_TAG = 3;
 
 export interface SectionInputEvent {
   id: string;
@@ -42,7 +37,7 @@ export interface SectionInputEvent {
 }
 
 /**
- * Pure sectioning logic (Flusso 5.2 — "primi 3 impegni per TAG").
+ * Pure sectioning logic for all upcoming events by tag.
  * Input events must already be visibility-filtered and sorted by startsAt asc.
  */
 export function buildSections(events: SectionInputEvent[]): BachecaSection[] {
@@ -69,9 +64,7 @@ export function buildSections(events: SectionInputEvent[]): BachecaSection[] {
         section = { tag: name, color, events: [] };
         sections.set(name, section);
       }
-      if (section.events.length < EVENTS_PER_TAG) {
-        section.events.push(view);
-      }
+      section.events.push(view);
     }
   }
 
@@ -85,7 +78,7 @@ export function buildSections(events: SectionInputEvent[]): BachecaSection[] {
 
 /**
  * Flusso 5 — bacheca personalizzata.
- * Per TAG: max 3 upcoming events visible to the user, i.e. events that are
+ * Upcoming events visible to the user, i.e. events that are
  * global ("visibile a tutti") or shared with a subgroup the user belongs to.
  */
 export async function eventSectionsForUser(userId: string): Promise<BachecaSection[]> {
@@ -111,9 +104,5 @@ export async function eventSectionsForUser(userId: string): Promise<BachecaSecti
 }
 
 export async function bachecaForUser(userId: string): Promise<BachecaPayload> {
-  const [resources, eventSections] = await Promise.all([
-    listResourcesForUser(userId),
-    eventSectionsForUser(userId),
-  ]);
-  return { resources, eventSections };
+  return { eventSections: await eventSectionsForUser(userId) };
 }
