@@ -58,7 +58,9 @@ function declaredImageLength(response: Response): number | null {
   const value = response.headers.get("content-length");
   if (value === null) return null;
   if (!/^\d+$/.test(value.trim())) throw new Error("Preview image length is invalid");
-  return Number(value);
+  const length = Number(value);
+  if (!Number.isSafeInteger(length)) throw new Error("Preview image length is invalid");
+  return length;
 }
 
 async function readBoundedImage(response: Response, signal: AbortSignal): Promise<Uint8Array> {
@@ -69,7 +71,7 @@ async function readBoundedImage(response: Response, signal: AbortSignal): Promis
   if (!response.body) return new Uint8Array();
 
   const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
+  const buffer = new Uint8Array(MAX_PREVIEW_IMAGE_BYTES);
   let bytesRead = 0;
 
   try {
@@ -80,7 +82,7 @@ async function readBoundedImage(response: Response, signal: AbortSignal): Promis
       if (bytesRead > MAX_PREVIEW_IMAGE_BYTES) {
         throw new Error("Preview image exceeds 512 KiB");
       }
-      chunks.push(value);
+      buffer.set(value, bytesRead - value.byteLength);
     }
   } catch (error) {
     await reader.cancel().catch(() => undefined);
@@ -89,13 +91,7 @@ async function readBoundedImage(response: Response, signal: AbortSignal): Promis
     reader.releaseLock();
   }
 
-  const data = new Uint8Array(bytesRead);
-  let offset = 0;
-  for (const chunk of chunks) {
-    data.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return data;
+  return buffer.slice(0, bytesRead);
 }
 
 export async function fetchPublicImage(

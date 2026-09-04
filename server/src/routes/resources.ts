@@ -11,6 +11,7 @@ import {
   ResourceNotFoundError,
   resourceInputSchema,
   resourceOrderSchema,
+  sanitizeResourceRecord,
   updateResource,
 } from "../services/sharedResourceService.js";
 import { h, parseBody } from "./helpers.js";
@@ -69,7 +70,7 @@ resourcesRouter.use(requireAdmin);
 resourcesRouter.get(
   "/",
   h(async (_req, res) => {
-    res.json(await listAdminResources());
+    res.json((await listAdminResources()).map(sanitizeResourceRecord));
   })
 );
 
@@ -94,7 +95,7 @@ resourcesRouter.post(
     const body = parseBody(resourceInputSchema, req, res);
     if (!body) return;
     try {
-      res.status(201).json(await createResource(body));
+      res.status(201).json(sanitizeResourceRecord(await createResource(body)));
     } catch (error) {
       handleResourceError(error, res);
     }
@@ -107,7 +108,7 @@ resourcesRouter.put(
     const body = parseBody(resourceOrderSchema, req, res);
     if (!body) return;
     try {
-      res.json(await reorderResources(body.resourceIds));
+      res.json((await reorderResources(body.resourceIds)).map(sanitizeResourceRecord));
     } catch (error) {
       handleResourceError(error, res);
     }
@@ -120,7 +121,7 @@ resourcesRouter.put(
     const body = parseBody(resourceInputSchema, req, res);
     if (!body) return;
     try {
-      res.json(await updateResource(req.params.id, body));
+      res.json(sanitizeResourceRecord(await updateResource(req.params.id, body)));
     } catch (error) {
       handleResourceError(error, res);
     }

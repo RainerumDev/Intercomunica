@@ -108,6 +108,7 @@ describe("admin resource routes", () => {
 
   it("returns the ordered admin resource collection", async () => {
     const ordered = [resource("resource-2", 0), resource("resource-1", 1)];
+    ordered[0].previewImageUrl = "https://legacy.example.org/list.png";
     resourceOperations.listAdminResources.mockResolvedValue(ordered);
 
     const response = await request(createApp())
@@ -116,6 +117,7 @@ describe("admin resource routes", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.map((item: ResourceRecord) => item.id)).toEqual(["resource-2", "resource-1"]);
+    expect(response.body.every((item: ResourceRecord) => item.previewImageUrl === null)).toBe(true);
   });
 
   it("rejects an invalid create body before reaching persistence", async () => {
@@ -131,6 +133,7 @@ describe("admin resource routes", () => {
 
   it("creates a valid resource and returns it with status 201", async () => {
     const created = resource("resource-new", 2);
+    created.previewImageUrl = "https://legacy.example.org/create.png";
     resourceOperations.createResource.mockResolvedValue(created);
 
     const response = await request(createApp())
@@ -140,6 +143,7 @@ describe("admin resource routes", () => {
 
     expect(response.status).toBe(201);
     expect(response.body.id).toBe("resource-new");
+    expect(response.body.previewImageUrl).toBeNull();
     expect(resourceOperations.createResource).toHaveBeenCalledWith(resourceInput);
   });
 
@@ -217,7 +221,11 @@ describe("admin resource routes", () => {
   });
 
   it("updates a resource from validated input and returns the updated resource", async () => {
-    const updated = { ...resource("resource-1", 0), title: "Updated guide" };
+    const updated = {
+      ...resource("resource-1", 0),
+      title: "Updated guide",
+      previewImageUrl: "https://legacy.example.org/update.png",
+    };
     resourceOperations.updateResource.mockResolvedValue(updated);
 
     const response = await request(createApp())
@@ -227,6 +235,7 @@ describe("admin resource routes", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.title).toBe("Updated guide");
+    expect(response.body.previewImageUrl).toBeNull();
     expect(resourceOperations.updateResource).toHaveBeenCalledWith("resource-1", {
       ...resourceInput,
       title: "Updated guide",
@@ -291,6 +300,7 @@ describe("admin resource routes", () => {
 
   it("persists a validated complete order and returns ordered resources", async () => {
     const ordered = [resource("resource-2", 0), resource("resource-1", 1)];
+    ordered[1].previewImageUrl = "https://legacy.example.org/order.png";
     resourceOperations.reorderResources.mockResolvedValue(ordered);
 
     const response = await request(createApp())
@@ -300,6 +310,7 @@ describe("admin resource routes", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.map((item: ResourceRecord) => item.id)).toEqual(["resource-2", "resource-1"]);
+    expect(response.body.every((item: ResourceRecord) => item.previewImageUrl === null)).toBe(true);
     expect(resourceOperations.reorderResources).toHaveBeenCalledWith(["resource-2", "resource-1"]);
   });
 

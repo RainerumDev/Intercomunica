@@ -225,6 +225,7 @@ describe("shared resources", () => {
       }),
     });
     const publicSelect = findMany.mock.calls[0][0].select;
+    expect(publicSelect).not.toHaveProperty("previewImageUrl");
     expect(publicSelect).not.toHaveProperty("previewImageData");
     expect(publicSelect).not.toHaveProperty("previewImageMimeType");
     expect(findMany).toHaveBeenNthCalledWith(2, {
@@ -272,6 +273,7 @@ describe("shared resources", () => {
       select: expect.any(Object),
     });
     const publicSelect = findUnique.mock.calls[0][0].select;
+    expect(publicSelect).not.toHaveProperty("previewImageUrl");
     expect(publicSelect).not.toHaveProperty("previewImageData");
     expect(publicSelect).not.toHaveProperty("previewImageMimeType");
     expect(findFirst).toHaveBeenCalledWith({
@@ -366,12 +368,15 @@ describe("shared resources", () => {
     expect(findFirst).not.toHaveBeenCalled();
   });
 
-  it("serializes stored preview bytes as a boolean without exposing the bytes", async () => {
+  it("serializes stored preview bytes as a boolean without exposing bytes or a legacy URL", async () => {
     const previewImageData = new Uint8Array([137, 80, 78, 71]);
     const repository = createPrismaSharedResourceRepository({
       sharedResource: {
         findMany: vi.fn().mockResolvedValue([{
-          ...resource({ id: "resource-1", previewImageUrl: null }),
+          ...resource({
+            id: "resource-1",
+            previewImageUrl: "https://legacy.example.org/card.png",
+          }),
           previewImageData,
           previewImageMimeType: "image/png",
           subgroups: [],
@@ -437,6 +442,23 @@ describe("shared resources", () => {
     expect((await service.listAdminResources()).map((item) => item.id)).toEqual([
       "r-first", "r-g2", "r-g1-first", "r-g1-later", "r-global",
     ]);
+  });
+
+  it("clears legacy preview image URLs from admin and public service results", async () => {
+    const repository = new FakeResourceRepository([
+      resource({
+        id: "legacy",
+        isGlobal: true,
+        previewImageUrl: "https://legacy.example.org/card.png",
+      }),
+    ]);
+    const service = resourceService(repository);
+
+    expect(await service.listAdminResources()).toMatchObject([{ previewImageUrl: null }]);
+    expect(await service.listResourcesForUser("teacher-1")).toMatchObject([
+      { previewImageUrl: null },
+    ]);
+    expect(repository.resources[0].previewImageUrl).toBe("https://legacy.example.org/card.png");
   });
 
   it("persists normalized targets and assigns the next sort position on creation", async () => {

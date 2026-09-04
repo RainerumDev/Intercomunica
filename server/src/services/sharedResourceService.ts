@@ -79,6 +79,10 @@ export type ResourceRecord = {
 
 export type ResourceImage = { data: Uint8Array; mimeType: string };
 
+export function sanitizeResourceRecord(resource: ResourceRecord): ResourceRecord {
+  return { ...resource, previewImageUrl: null };
+}
+
 type ResourceImageStorage = {
   previewImageData: Uint8Array | null;
   previewImageMimeType: string | null;
@@ -174,17 +178,18 @@ export function createSharedResourceService(
     async createResource(input: SharedResourceInput): Promise<ResourceRecord> {
       const normalized = normalizeInput(input);
       const preview = await fetchedPreviewData(normalized, fetchPreview);
-      return repository.audienceTransaction(async (transaction) => {
+      const created = await repository.audienceTransaction(async (transaction) => {
         const currentResources = await transaction.listResources();
         const sortOrder = Math.max(-1, ...currentResources.map((resource) => resource.sortOrder)) + 1;
         return transaction.createResource({ ...resourceData(normalized, preview.previewFetchedAt), ...preview, sortOrder });
       });
+      return sanitizeResourceRecord(created);
     },
 
     async updateResource(id: string, input: SharedResourceInput): Promise<ResourceRecord> {
       const normalized = normalizeInput(input);
       const preview = await fetchedPreviewData(normalized, fetchPreview);
-      return repository.audienceTransaction(async (transaction) => {
+      const updated = await repository.audienceTransaction(async (transaction) => {
         const current = requireResource(await transaction.findResource(id), id);
         return transaction.updateResource(id, {
           ...resourceData(normalized, preview.previewFetchedAt),
@@ -192,6 +197,7 @@ export function createSharedResourceService(
           sortOrder: current.sortOrder,
         });
       });
+      return sanitizeResourceRecord(updated);
     },
 
     async deleteResource(id: string): Promise<void> {
@@ -210,7 +216,7 @@ export function createSharedResourceService(
     },
 
     async listAdminResources(): Promise<ResourceRecord[]> {
-      return sortedResources(await repository.listResources());
+      return sortedResources(await repository.listResources()).map(sanitizeResourceRecord);
     },
 
     async listResourcesForUser(userId: string): Promise<ResourceRecord[]> {
@@ -221,12 +227,12 @@ export function createSharedResourceService(
       const userSubgroupIds = new Set(subgroupIds);
       return sortedResources(resources.filter((resource) =>
         resource.isGlobal || resource.subgroupIds.some((subgroupId) => userSubgroupIds.has(subgroupId))
-      ));
+      )).map(sanitizeResourceRecord);
     },
 
     async reorderResources(resourceIds: string[]): Promise<ResourceRecord[]> {
       const parsedIds = resourceOrderSchema.parse({ resourceIds }).resourceIds;
-      return repository.transaction(async (transaction) => {
+      const reordered = await repository.transaction(async (transaction) => {
         const resources = await transaction.listResources();
         const existingIds = new Set(resources.map((resource) => resource.id));
         if (parsedIds.length !== resources.length || parsedIds.some((id) => !existingIds.has(id))) {
@@ -236,6 +242,7 @@ export function createSharedResourceService(
         await Promise.all(parsedIds.map((id, sortOrder) => transaction.updateResourceSortOrder(id, sortOrder)));
         return sortedResources(await transaction.listResources());
       });
+      return reordered.map(sanitizeResourceRecord);
     },
   };
 }
@@ -248,7 +255,6 @@ const publicResourceSelect = {
   title: true,
   description: true,
   previewEnabled: true,
-  previewImageUrl: true,
   previewSiteName: true,
   previewFetchedAt: true,
   isGlobal: true,
@@ -267,7 +273,7 @@ function toResourceRecord(resource: PrismaPublicResource, hasPreviewImage: boole
     title: resource.title,
     description: resource.description,
     previewEnabled: resource.previewEnabled,
-    previewImageUrl: resource.previewImageUrl,
+    previewImageUrl: null,
     hasPreviewImage,
     previewSiteName: resource.previewSiteName,
     previewFetchedAt: resource.previewFetchedAt,

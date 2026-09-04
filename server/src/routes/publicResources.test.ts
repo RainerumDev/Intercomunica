@@ -54,11 +54,17 @@ describe("public resource routes", () => {
   });
 
   it("returns resources visible to the authenticated user", async () => {
-    resourceOperations.listResourcesForUser.mockResolvedValue([visibleResource]);
+    resourceOperations.listResourcesForUser.mockResolvedValue([{
+      ...visibleResource,
+      previewImageUrl: "https://legacy.example.org/public.png",
+    }]);
 
     const response = await request(createApp()).get("/api/resources").set("Cookie", teacherCookie);
 
-    expect(response).toMatchObject({ status: 200, body: [visibleResource] });
+    expect(response).toMatchObject({
+      status: 200,
+      body: [{ ...visibleResource, previewImageUrl: null }],
+    });
     expect(response.body[0]).toHaveProperty("hasPreviewImage", true);
     expect(resourceOperations.listResourcesForUser).toHaveBeenCalledWith("teacher-1");
   });

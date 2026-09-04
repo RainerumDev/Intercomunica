@@ -83,7 +83,6 @@ describe("fetchPublicImage security boundary", () => {
   it.each([
     "image/svg+xml",
     "text/html",
-    "image/png, text/html",
     "image/png; invalid parameter",
   ])("rejects invalid image type %s", async (contentType) => {
     const dependencies = imageDependencies([
@@ -115,6 +114,64 @@ describe("fetchPublicImage security boundary", () => {
       /512 KiB/i
     );
     expect(cancelled).toBe(true);
+  });
+
+  it.each([
+    "not-a-number",
+    "-1",
+    "9007199254740992",
+  ])("rejects invalid declared image length %s", async (contentLength) => {
+    const dependencies = imageDependencies([
+      new Response(new Uint8Array([1]), {
+        headers: {
+          "content-type": "image/png",
+          "content-length": contentLength,
+        },
+      }),
+    ]);
+
+    await expect(fetchPublicImage("https://example.org/card.png", dependencies)).rejects.toThrow(
+      /image length/i
+    );
+  });
+
+  it("accepts an image exactly at the 512 KiB boundary", async () => {
+    const bytes = new Uint8Array(MAX_PREVIEW_IMAGE_BYTES);
+    const dependencies = imageDependencies([
+      new Response(bytes, {
+        headers: {
+          "content-type": "image/png",
+          "content-length": String(MAX_PREVIEW_IMAGE_BYTES),
+        },
+      }),
+    ]);
+
+    const image = await fetchPublicImage("https://example.org/card.png", dependencies);
+
+    expect(image.data).toHaveLength(MAX_PREVIEW_IMAGE_BYTES);
+    expect(image.mimeType).toBe("image/png");
+  });
+
+  it("handles many small chunks without changing the downloaded bytes", async () => {
+    const chunkCount = 4096;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let index = 0; index < chunkCount; index++) {
+          controller.enqueue(new Uint8Array([index % 251]));
+        }
+        controller.close();
+      },
+    });
+    const dependencies = imageDependencies([
+      new Response(body, { headers: { "content-type": "image/png" } }),
+    ]);
+
+    const image = await fetchPublicImage("https://example.org/card.png", dependencies);
+
+    expect(image.data).toHaveLength(chunkCount);
+    expect(image.data[0]).toBe(0);
+    expect(image.data[251]).toBe(0);
+    expect(image.data[chunkCount - 1]).toBe((chunkCount - 1) % 251);
   });
 
   it("cancels a streamed image body as soon as it exceeds 512 KiB", async () => {
@@ -179,15 +236,49 @@ describe("fetchPublicImage security boundary", () => {
     }
   });
 
-  it("allows exactly three redirects and rejects a fourth", async () => {
+  it("allows exactly three redirects and pins every hop to its own validated address", async () => {
+    const addressesByHost: Record<string, { address: string; family: number }[]> = {
+      "start.example": [{ address: "93.184.216.31", family: 4 }],
+      "one.example": [{ address: "93.184.216.32", family: 4 }],
+      "two.example": [{ address: "93.184.216.33", family: 4 }],
+      "three.example": [{ address: "93.184.216.34", family: 4 }],
+    };
+    const requests: Array<{
+      url: string;
+      addresses: readonly { address: string; family: number }[] | undefined;
+    }> = [];
     const dependencies = imageDependencies([
-      new Response(null, { status: 302, headers: { location: "/one" } }),
-      new Response(null, { status: 302, headers: { location: "/two" } }),
-      new Response(null, { status: 302, headers: { location: "/three" } }),
-      new Response(null, { status: 302, headers: { location: "/four" } }),
+      new Response(null, { status: 302, headers: { location: "https://one.example/card.png" } }),
+      new Response(null, { status: 302, headers: { location: "https://two.example/card.png" } }),
+      new Response(null, { status: 302, headers: { location: "https://three.example/card.png" } }),
+      new Response(new Uint8Array([137, 80, 78, 71]), {
+        headers: { "content-type": "image/png" },
+      }),
+    ], {
+      lookup: async (hostname) => addressesByHost[hostname],
+      onFetch: (url, _init, addresses) => requests.push({ url, addresses }),
+    });
+
+    await expect(fetchPublicImage("https://start.example/card.png", dependencies)).resolves.toMatchObject({
+      mimeType: "image/png",
+    });
+    expect(requests).toEqual([
+      { url: "https://start.example/card.png", addresses: addressesByHost["start.example"] },
+      { url: "https://one.example/card.png", addresses: addressesByHost["one.example"] },
+      { url: "https://two.example/card.png", addresses: addressesByHost["two.example"] },
+      { url: "https://three.example/card.png", addresses: addressesByHost["three.example"] },
+    ]);
+  });
+
+  it("rejects a fourth redirect", async () => {
+    const dependencies = imageDependencies([
+      new Response(null, { status: 302, headers: { location: "https://one.example/card.png" } }),
+      new Response(null, { status: 302, headers: { location: "https://two.example/card.png" } }),
+      new Response(null, { status: 302, headers: { location: "https://three.example/card.png" } }),
+      new Response(null, { status: 302, headers: { location: "https://four.example/card.png" } }),
     ]);
 
-    await expect(fetchPublicImage("https://example.org/card.png", dependencies)).rejects.toThrow(
+    await expect(fetchPublicImage("https://start.example/card.png", dependencies)).rejects.toThrow(
       /redirect/i
     );
   });

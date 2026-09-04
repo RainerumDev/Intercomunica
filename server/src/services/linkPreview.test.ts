@@ -3,10 +3,12 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  createAbortableDnsLookup,
   fetchLinkPreview,
   fetchUsingValidatedAddresses,
   UnsafePreviewUrlError,
   type LinkPreviewDependencies,
+  type LinkPreviewDnsResolver,
 } from "./linkPreview.js";
 
 const PUBLIC_DNS_RESULT = [{ address: "93.184.216.34", family: 4 as const }];
@@ -38,6 +40,7 @@ describe("fetchLinkPreview security boundary", () => {
     const server = createServer((request, response) => {
       connectedAddress = request.socket.localAddress;
       receivedHost = request.headers.host;
+      response.setHeader("Content-Type", "text/plain");
       response.end("pinned transport");
     });
     server.listen(0, "127.0.0.1");
@@ -54,6 +57,50 @@ describe("fetchLinkPreview security boundary", () => {
       expect(await response.text()).toBe("pinned transport");
       expect(connectedAddress).toBe("127.0.0.1");
       expect(receivedHost).toBe(`rebind.invalid:${port}`);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  it("rejects duplicate Content-Type headers in the pinned production transport", async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, [
+        "Content-Type", "image/png",
+        "Content-Type", "text/html",
+      ]);
+      response.end("ambiguous");
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      await expect(fetchUsingValidatedAddresses(
+        `http://duplicate.invalid:${port}/preview`,
+        {},
+        [{ address: "127.0.0.1", family: 4 }]
+      )).rejects.toThrow(/content-type/i);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  it("rejects a pinned production response without Content-Type", async () => {
+    const server = createServer((_request, response) => response.end("untyped"));
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      await expect(fetchUsingValidatedAddresses(
+        `http://untyped.invalid:${port}/preview`,
+        {},
+        [{ address: "127.0.0.1", family: 4 }]
+      )).rejects.toThrow(/content-type/i);
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
@@ -202,6 +249,77 @@ describe("fetchLinkPreview security boundary", () => {
     }
   });
 
+  it("passes the deadline signal to DNS so timed-out lookup capacity is released", async () => {
+    vi.useFakeTimers();
+    try {
+      let activeLookups = 0;
+      let cancelledLookups = 0;
+      const dependencies: LinkPreviewDependencies = {
+        deadlineMs: 50,
+        lookup: (_hostname, signal) => {
+          activeLookups++;
+          return new Promise((_resolve, reject) => {
+            signal?.addEventListener("abort", () => {
+              cancelledLookups++;
+              activeLookups--;
+              reject(signal.reason);
+            }, { once: true });
+          });
+        },
+        fetch: async () => {
+          throw new Error("fetch must not start");
+        },
+      };
+      const pending = fetchLinkPreview("https://example.org", dependencies);
+      const rejection = expect(pending).rejects.toThrow(/timed out/i);
+
+      expect(activeLookups).toBe(1);
+      await vi.advanceTimersByTimeAsync(51);
+
+      await rejection;
+      expect(cancelledLookups).toBe(1);
+      expect(activeLookups).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("actively cancels both production DNS queries when its signal aborts", async () => {
+    const aborts: Array<(error: Error) => void> = [];
+    let activeQueries = 0;
+    const resolver: LinkPreviewDnsResolver = {
+      resolve4: async () => {
+        activeQueries++;
+        try {
+          return await new Promise<string[]>((_resolve, reject) => aborts.push(reject));
+        } finally {
+          activeQueries--;
+        }
+      },
+      resolve6: async () => {
+        activeQueries++;
+        try {
+          return await new Promise<string[]>((_resolve, reject) => aborts.push(reject));
+        } finally {
+          activeQueries--;
+        }
+      },
+      cancel: vi.fn(() => {
+        for (const abort of aborts) abort(new Error("DNS query cancelled"));
+      }),
+    };
+    const lookup = createAbortableDnsLookup(() => resolver);
+    const deadline = new AbortController();
+    const pending = lookup("example.org", deadline.signal);
+
+    await vi.waitFor(() => expect(activeQueries).toBe(2));
+    deadline.abort(new Error("Preview timed out"));
+
+    await expect(pending).rejects.toThrow(/timed out/i);
+    expect(resolver.cancel).toHaveBeenCalledOnce();
+    expect(activeQueries).toBe(0);
+  });
+
   it("aborts a real delayed local transport within the configured overall deadline", async () => {
     const server = createServer((_request, response) => {
       response.writeHead(200, { "content-type": "text/html" });
@@ -319,7 +437,8 @@ describe("fetchLinkPreview metadata extraction", () => {
       imageUrl: "https://images.example.org/private.png",
     });
     expect(lookup).toHaveBeenCalledTimes(1);
-    expect(lookup).toHaveBeenCalledWith("example.org");
+    expect(lookup.mock.calls[0][0]).toBe("example.org");
+    expect(lookup.mock.calls[0][1]).toBeInstanceOf(AbortSignal);
   });
 
   it("allows exactly three redirects and validates every destination", async () => {

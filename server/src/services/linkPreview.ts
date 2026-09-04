@@ -1,4 +1,4 @@
-import { lookup as dnsLookup } from "node:dns/promises";
+import { Resolver } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP, type LookupFunction } from "node:net";
@@ -25,9 +25,15 @@ export type LinkPreviewLookupAddress = {
   family: number;
 };
 
+export type LinkPreviewDnsResolver = {
+  resolve4(hostname: string): Promise<string[]>;
+  resolve6(hostname: string): Promise<string[]>;
+  cancel(): void;
+};
+
 export type LinkPreviewDependencies = {
   deadlineMs?: number;
-  lookup: (hostname: string) => Promise<LinkPreviewLookupAddress[]>;
+  lookup: (hostname: string, signal?: AbortSignal) => Promise<LinkPreviewLookupAddress[]>;
   fetch: (
     url: string,
     init: RequestInit,
@@ -42,8 +48,42 @@ export class UnsafePreviewUrlError extends Error {
   }
 }
 
+export function createAbortableDnsLookup(
+  createResolver: () => LinkPreviewDnsResolver = () => new Resolver()
+): LinkPreviewDependencies["lookup"] {
+  return async (hostname, signal) => {
+    if (signal?.aborted) throw deadlineError(signal);
+
+    const resolver = createResolver();
+    const cancel = () => resolver.cancel();
+    signal?.addEventListener("abort", cancel, { once: true });
+
+    try {
+      const results = await Promise.allSettled([
+        resolver.resolve4(hostname),
+        resolver.resolve6(hostname),
+      ]);
+      if (signal?.aborted) throw deadlineError(signal);
+
+      const addresses = results.flatMap((result, index): LinkPreviewLookupAddress[] =>
+        result.status === "fulfilled"
+          ? result.value.map((address) => ({ address, family: index === 0 ? 4 : 6 }))
+          : []
+      );
+      if (addresses.length > 0) return addresses;
+
+      const failure = results.find((result) => result.status === "rejected");
+      throw failure?.status === "rejected"
+        ? failure.reason
+        : new Error("Preview DNS lookup returned no addresses");
+    } finally {
+      signal?.removeEventListener("abort", cancel);
+    }
+  };
+}
+
 export const defaultLinkPreviewDependencies: LinkPreviewDependencies = {
-  lookup: async (hostname) => dnsLookup(hostname, { all: true, verbatim: true }),
+  lookup: createAbortableDnsLookup(),
   fetch: (url, init, validatedAddresses) => {
     if (!validatedAddresses) throw new Error("Validated preview addresses are required");
     return fetchUsingValidatedAddresses(url, init, validatedAddresses);
@@ -95,13 +135,22 @@ export function fetchUsingValidatedAddresses(
         signal: init.signal ?? undefined,
       },
       (incoming) => {
+        const contentTypes = incoming.headersDistinct["content-type"] ?? [];
+        if (contentTypes.length !== 1) {
+          incoming.destroy();
+          reject(new Error("Preview response must contain exactly one Content-Type header"));
+          return;
+        }
+        const contentLengths = incoming.headersDistinct["content-length"] ?? [];
+        if (contentLengths.length > 1) {
+          incoming.destroy();
+          reject(new Error("Preview response must not contain duplicate Content-Length headers"));
+          return;
+        }
+
         const headers = new Headers();
-        for (const [name, value] of Object.entries(incoming.headers)) {
-          if (Array.isArray(value)) {
-            for (const item of value) headers.append(name, item);
-          } else if (value !== undefined) {
-            headers.set(name, value);
-          }
+        for (const [name, values] of Object.entries(incoming.headersDistinct)) {
+          for (const value of values ?? []) headers.append(name, value);
         }
 
         const status = incoming.statusCode ?? 500;
@@ -237,7 +286,7 @@ export async function resolvePublicHttpUrl(
     return { url, addresses: [{ address: hostname, family: literalFamily }] };
   }
 
-  const addresses = await withDeadline(lookup(hostname), signal);
+  const addresses = await withDeadline(lookup(hostname, signal), signal);
   if (addresses.length === 0 || addresses.some(({ address }) => !isPublicAddress(address))) {
     throw new UnsafePreviewUrlError();
   }
