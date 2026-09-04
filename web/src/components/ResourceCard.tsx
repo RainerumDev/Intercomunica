@@ -1,18 +1,31 @@
 import type { ReactNode } from "react";
-import type { SharedResourceDraft } from "../types";
+import type { SharedResource, SharedResourceDraft } from "../types";
 import { resourceCardFallback } from "./resourceForm";
 
 interface Props {
-  resource: SharedResourceDraft;
+  resource: SharedResource | SharedResourceDraft;
   children?: ReactNode;
   linked?: boolean;
 }
 
 export default function ResourceCard({ resource, children, linked = true }: Props) {
+  const imageSrc = "id" in resource && resource.hasPreviewImage
+    ? `/api/resources/${encodeURIComponent(resource.id)}/preview-image`
+    : null;
   const content = (
     <>
       <div className="resource-card__preview">
-        <span>{resourceCardFallback(resource)}</span>
+        {imageSrc ? (
+          <img
+            src={imageSrc}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="resource-card__image"
+          />
+        ) : (
+          <span>{resourceCardFallback(resource)}</span>
+        )}
       </div>
       <div className="resource-card__body">
         <div className="flex items-start justify-between gap-3">

@@ -68,8 +68,14 @@ describe("resource form helpers", () => {
   });
 
   it("uses preview site name or a www-free URL hostname for cards", () => {
+    const resourceWithExternalMetadata = {
+      previewSiteName: null,
+      previewImageUrl: "https://images.example.org/external.png",
+      url: "https://www.example.org/a",
+    };
     expect(resourceCardFallback({ previewSiteName: "Example", url: "https://www.example.org/a" })).toBe("Example");
     expect(resourceCardFallback({ previewSiteName: null, url: "https://www.example.org/a" })).toBe("example.org");
+    expect(resourceCardFallback(resourceWithExternalMetadata)).toBe("example.org");
   });
 
   it("returns a safe textual fallback for malformed URLs", () => {

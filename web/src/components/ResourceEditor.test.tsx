@@ -301,7 +301,7 @@ describe("ResourceEditor", () => {
     }));
   });
 
-  it("never renders a remote preview image in the live card", () => {
+  it("keeps an ID-less live card on its text fallback instead of a remote preview image", () => {
     render(
       <ResourceEditor
         initialDraft={{
@@ -319,6 +319,7 @@ describe("ResourceEditor", () => {
     );
 
     expect(document.querySelector("img")).toBeNull();
+    expect(screen.getByText("Example")).toBeTruthy();
   });
 
   it("preserves title clearing and description edits made while preview is pending", async () => {
