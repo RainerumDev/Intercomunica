@@ -2,7 +2,10 @@ import { PrismaClient, type Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { serializableTransaction } from "../db/serializableTransaction.js";
-import { fetchLinkPreview, type LinkPreview } from "./linkPreview.js";
+import {
+  fetchResourcePreview,
+  type ResourcePreviewResult,
+} from "./resourcePreviewImage.js";
 
 export type SharedResourceInput = {
   url: string;
@@ -150,29 +153,50 @@ function requireResource(resource: ResourceRecord | null, id: string): ResourceR
 
 async function fetchedPreviewData(
   input: SharedResourceInput,
-  fetchPreview: (url: string) => Promise<LinkPreview>
-): Promise<Pick<ResourceCreateData, "previewImageUrl" | "previewSiteName" | "previewFetchedAt">> {
+  fetchPreview: (url: string) => Promise<ResourcePreviewResult>
+): Promise<Pick<
+  ResourceCreateData,
+  | "previewImageUrl"
+  | "previewImageData"
+  | "previewImageMimeType"
+  | "previewSiteName"
+  | "previewFetchedAt"
+>> {
   if (!input.previewEnabled) {
-    return { previewImageUrl: null, previewSiteName: null, previewFetchedAt: null };
+    return {
+      previewImageUrl: null,
+      previewImageData: null,
+      previewImageMimeType: null,
+      previewSiteName: null,
+      previewFetchedAt: null,
+    };
   }
 
   try {
-    const preview = await fetchPreview(input.url);
+    const { preview, image } = await fetchPreview(input.url);
     return {
       // External images would be resolved again by the browser, outside the
       // server's DNS-pinned preview boundary. Persist no browser-fetchable URL.
       previewImageUrl: null,
+      previewImageData: image?.data ?? null,
+      previewImageMimeType: image?.mimeType ?? null,
       previewSiteName: preview.siteName,
       previewFetchedAt: new Date(),
     };
   } catch {
-    return { previewImageUrl: null, previewSiteName: null, previewFetchedAt: null };
+    return {
+      previewImageUrl: null,
+      previewImageData: null,
+      previewImageMimeType: null,
+      previewSiteName: null,
+      previewFetchedAt: null,
+    };
   }
 }
 
 export function createSharedResourceService(
   repository: SharedResourceRepository,
-  fetchPreview: (url: string) => Promise<LinkPreview> = fetchLinkPreview
+  fetchPreview: (url: string) => Promise<ResourcePreviewResult> = fetchResourcePreview
 ) {
   return {
     async createResource(input: SharedResourceInput): Promise<ResourceRecord> {
@@ -228,6 +252,21 @@ export function createSharedResourceService(
       return sortedResources(resources.filter((resource) =>
         resource.isGlobal || resource.subgroupIds.some((subgroupId) => userSubgroupIds.has(subgroupId))
       )).map(sanitizeResourceRecord);
+    },
+
+    async getResourceImageForUser(userId: string, resourceId: string): Promise<ResourceImage> {
+      const [resource, subgroupIds] = await Promise.all([
+        repository.findResource(resourceId),
+        repository.listUserSubgroupIds(userId),
+      ]);
+      const visible = resource && (
+        resource.isGlobal || resource.subgroupIds.some((subgroupId) => subgroupIds.includes(subgroupId))
+      );
+      if (!visible) throw new ResourceNotFoundError(resourceId);
+
+      const image = await repository.findResourceImage(resourceId);
+      if (!image) throw new ResourceNotFoundError(resourceId);
+      return image;
     },
 
     async reorderResources(resourceIds: string[]): Promise<ResourceRecord[]> {
@@ -434,4 +473,5 @@ export const updateResource = defaultService.updateResource;
 export const deleteResource = defaultService.deleteResource;
 export const listAdminResources = defaultService.listAdminResources;
 export const listResourcesForUser = defaultService.listResourcesForUser;
+export const getResourceImageForUser = defaultService.getResourceImageForUser;
 export const reorderResources = defaultService.reorderResources;

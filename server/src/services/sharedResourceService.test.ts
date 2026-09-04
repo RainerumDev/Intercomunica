@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createPrismaSharedResourceRepository,
   createSharedResourceService,
+  ResourceNotFoundError,
   resourceInputSchema,
   resourceOrderSchema,
   type ResourceRecord,
@@ -10,6 +11,7 @@ import {
   type SharedResourceRepository,
 } from "./sharedResourceService.js";
 import type { LinkPreview } from "./linkPreview.js";
+import type { ResourcePreviewResult } from "./resourcePreviewImage.js";
 
 const baseTime = new Date("2026-09-01T09:00:00.000Z");
 
@@ -45,6 +47,9 @@ function cloneResource(value: ResourceRecord): ResourceRecord {
 
 class FakeResourceRepository implements SharedResourceRepository {
   resources: ResourceRecord[];
+  images = new Map<string, ResourceImage>();
+  created: Array<Parameters<SharedResourceRepository["createResource"]>[0]> = [];
+  updated: Array<Parameters<SharedResourceRepository["updateResource"]>[1]> = [];
   userSubgroups = new Map<string, string[]>();
   audienceTransactions = 0;
   resourceUpdateCalls = 0;
@@ -65,13 +70,21 @@ class FakeResourceRepository implements SharedResourceRepository {
   }
 
   async createResource(data: Parameters<SharedResourceRepository["createResource"]>[0]): Promise<ResourceRecord> {
+    this.created.push(data);
     const created = resource({
       ...data,
       id: `new-${this.nextId++}`,
+      hasPreviewImage: data.previewImageData !== null && data.previewImageMimeType !== null,
       createdAt: new Date(baseTime.getTime() + this.nextId),
       updatedAt: new Date(baseTime.getTime() + this.nextId),
     });
     this.resources.push(created);
+    if (data.previewImageData !== null && data.previewImageMimeType !== null) {
+      this.images.set(created.id, {
+        data: new Uint8Array(data.previewImageData),
+        mimeType: data.previewImageMimeType,
+      });
+    }
     return cloneResource(created);
   }
 
@@ -79,6 +92,7 @@ class FakeResourceRepository implements SharedResourceRepository {
     id: string,
     data: Parameters<SharedResourceRepository["updateResource"]>[1]
   ): Promise<ResourceRecord> {
+    this.updated.push(data);
     this.resourceUpdateCalls++;
     const index = this.resources.findIndex((candidate) => candidate.id === id);
     if (index === -1) throw new Error(`Resource ${id} was not found`);
@@ -88,8 +102,21 @@ class FakeResourceRepository implements SharedResourceRepository {
       id,
       updatedAt: new Date(baseTime.getTime() + 1000),
       subgroupIds: data.subgroupIds ? [...data.subgroupIds] : this.resources[index].subgroupIds,
+      hasPreviewImage: data.previewImageData === undefined
+        ? this.resources[index].hasPreviewImage
+        : data.previewImageData !== null && data.previewImageMimeType !== null,
     });
     this.resources[index] = updated;
+    if (data.previewImageData !== undefined || data.previewImageMimeType !== undefined) {
+      if (data.previewImageData !== null && data.previewImageData !== undefined && data.previewImageMimeType) {
+        this.images.set(id, {
+          data: new Uint8Array(data.previewImageData),
+          mimeType: data.previewImageMimeType,
+        });
+      } else {
+        this.images.delete(id);
+      }
+    }
     return cloneResource(updated);
   }
 
@@ -111,8 +138,9 @@ class FakeResourceRepository implements SharedResourceRepository {
     this.resources.splice(index, 1);
   }
 
-  async findResourceImage(_id: string): Promise<ResourceImage | null> {
-    return null;
+  async findResourceImage(id: string): Promise<ResourceImage | null> {
+    const image = this.images.get(id);
+    return image ? { data: new Uint8Array(image.data), mimeType: image.mimeType } : null;
   }
 
   async listUserSubgroupIds(userId: string): Promise<string[]> {
@@ -166,7 +194,10 @@ function resourceService(
   repository: SharedResourceRepository,
   fetchPreview = previewWithoutMetadata
 ) {
-  return createSharedResourceService(repository, fetchPreview);
+  return createSharedResourceService(repository, async (url: string) => ({
+    preview: await fetchPreview(url),
+    image: null,
+  }) as ResourcePreviewResult);
 }
 
 describe("resourceInputSchema", () => {
@@ -535,6 +566,131 @@ describe("shared resources", () => {
 });
 
 describe("preview persistence", () => {
+  it("persists a securely fetched preview image with its MIME type", async () => {
+    const repository = new FakeResourceRepository();
+    const image = { data: new Uint8Array([137, 80, 78, 71]), mimeType: "image/png" };
+    const service = createSharedResourceService(repository, async (): Promise<ResourcePreviewResult> => ({
+      preview: {
+        finalUrl: input.url,
+        title: "Fetched title",
+        description: null,
+        imageUrl: "https://cdn.example.org/card.png",
+        siteName: "Example",
+      },
+      image,
+    }));
+
+    const created = await service.createResource({
+      ...input,
+      previewImageUrl: "https://attacker.example.org/spoof.png",
+    });
+
+    expect(repository.created[0]).toMatchObject({
+      previewImageData: image.data,
+      previewImageMimeType: "image/png",
+      previewImageUrl: null,
+    });
+    expect(created).toMatchObject({ hasPreviewImage: true, previewImageUrl: null });
+  });
+
+  it("retains fetched metadata when only preview image acquisition fails", async () => {
+    const repository = new FakeResourceRepository();
+    const service = createSharedResourceService(repository, async (): Promise<ResourcePreviewResult> => ({
+      preview: {
+        finalUrl: input.url,
+        title: "Fetched title",
+        description: null,
+        imageUrl: "https://cdn.example.org/card.png",
+        siteName: "Example",
+      },
+      image: null,
+    }));
+
+    await service.createResource(input);
+
+    expect(repository.created[0]).toMatchObject({
+      previewSiteName: "Example",
+      previewImageData: null,
+      previewImageMimeType: null,
+      previewImageUrl: null,
+    });
+    expect(repository.created[0].previewFetchedAt).toBeInstanceOf(Date);
+  });
+
+  it("clears persisted image bytes and metadata when preview is disabled", async () => {
+    const repository = new FakeResourceRepository([
+      resource({ id: "r1", subgroupIds: ["g1"], hasPreviewImage: true, previewSiteName: "Old site" }),
+    ]);
+    repository.images.set("r1", {
+      data: new Uint8Array([1, 2, 3]),
+      mimeType: "image/webp",
+    });
+    const fetchPreview = vi.fn<() => Promise<ResourcePreviewResult>>();
+    const service = createSharedResourceService(repository, fetchPreview);
+
+    await service.updateResource("r1", { ...input, previewEnabled: false });
+
+    expect(fetchPreview).not.toHaveBeenCalled();
+    expect(repository.updated[0]).toMatchObject({
+      previewImageData: null,
+      previewImageMimeType: null,
+      previewImageUrl: null,
+      previewSiteName: null,
+      previewFetchedAt: null,
+    });
+    await expect(repository.findResourceImage("r1")).resolves.toBeNull();
+  });
+
+  it("replaces persisted image bytes when an enabled resource is updated", async () => {
+    const repository = new FakeResourceRepository([
+      resource({ id: "r1", subgroupIds: ["g1"], hasPreviewImage: true }),
+    ]);
+    repository.images.set("r1", { data: new Uint8Array([1]), mimeType: "image/gif" });
+    const replacement = { data: new Uint8Array([9, 8, 7]), mimeType: "image/png" };
+    const service = createSharedResourceService(repository, async (): Promise<ResourcePreviewResult> => ({
+      preview: {
+        finalUrl: input.url,
+        title: null,
+        description: null,
+        imageUrl: "https://cdn.example.org/replacement.png",
+        siteName: "Example",
+      },
+      image: replacement,
+    }));
+
+    await service.updateResource("r1", input);
+
+    await expect(repository.findResourceImage("r1")).resolves.toEqual(replacement);
+    expect(repository.updated[0]).toMatchObject({
+      previewImageData: replacement.data,
+      previewImageMimeType: "image/png",
+    });
+  });
+
+  it("denies preview image retrieval to users outside the resource audience", async () => {
+    const repository = new FakeResourceRepository([
+      resource({ id: "resource-1", subgroupIds: ["g1"], hasPreviewImage: true }),
+    ]);
+    repository.images.set("resource-1", { data: new Uint8Array([1, 2]), mimeType: "image/png" });
+    repository.userSubgroups.set("outside-user", ["g2"]);
+    const service = resourceService(repository);
+
+    await expect(service.getResourceImageForUser("outside-user", "resource-1"))
+      .rejects.toBeInstanceOf(ResourceNotFoundError);
+  });
+
+  it("returns the stored image to a user in the resource audience", async () => {
+    const repository = new FakeResourceRepository([
+      resource({ id: "resource-1", subgroupIds: ["g1"], hasPreviewImage: true }),
+    ]);
+    const image = { data: new Uint8Array([1, 2]), mimeType: "image/png" };
+    repository.images.set("resource-1", image);
+    repository.userSubgroups.set("teacher-1", ["g1"]);
+    const service = resourceService(repository);
+
+    await expect(service.getResourceImageForUser("teacher-1", "resource-1")).resolves.toEqual(image);
+  });
+
   it("preserves manual content while omitting external preview images from persistence", async () => {
     const repository = new FakeResourceRepository();
     const service = resourceService(repository, async () => ({
@@ -621,6 +777,7 @@ describe("preview persistence", () => {
       title: "Manual title",
       description: "Manual description",
       previewImageUrl: null,
+      hasPreviewImage: false,
       previewSiteName: null,
       previewFetchedAt: null,
     });
@@ -628,6 +785,10 @@ describe("preview persistence", () => {
       previewImageUrl: null,
       previewSiteName: null,
       previewFetchedAt: null,
+    });
+    expect(repository.created[0]).toMatchObject({
+      previewImageData: null,
+      previewImageMimeType: null,
     });
   });
 
