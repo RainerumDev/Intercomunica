@@ -31,6 +31,7 @@ vi.mock("./auth", () => ({
 }));
 
 vi.mock("./pages/Bacheca", () => ({ default: () => <h1>Bacheca test</h1> }));
+vi.mock("./pages/Risorse", () => ({ default: () => <h1>Risorse test</h1> }));
 vi.mock("./pages/Directory", () => ({ default: () => <h1>Directory test</h1> }));
 vi.mock("./pages/Calendario", () => ({ default: () => <h1>Calendario test</h1> }));
 vi.mock("./pages/AdminSettings", () => ({ default: () => <h1>Impostazioni test</h1> }));
@@ -44,10 +45,10 @@ afterEach(() => {
 });
 
 describe("authenticated portal shell", () => {
-  it("exposes responsive Rainerum branding, a skip target, and the current admin route", async () => {
+  it("exposes the five admin destinations and marks Risorse as the current route", async () => {
     const user = userEvent.setup();
     const { container } = render(
-      <MemoryRouter initialEntries={["/directory"]}>
+      <MemoryRouter initialEntries={["/risorse"]}>
         <App />
       </MemoryRouter>,
     );
@@ -69,9 +70,9 @@ describe("authenticated portal shell", () => {
 
     const navigation = screen.getByRole("navigation", { name: "Navigazione principale" });
     expect(navigation).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Gruppi & Docenti" }).getAttribute("aria-current")).toBe(
-      "page",
-    );
+    expect(screen.getAllByRole("link", { name: /Bacheca|Risorse|Calendario|Gruppi e docenti|Impostazioni/ }))
+      .toHaveLength(5);
+    expect(screen.getByRole("link", { name: "Risorse" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("link", { name: "Impostazioni" })).toBeTruthy();
     expect(screen.getByRole("contentinfo")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Privacy" }).getAttribute("href")).toBe("/privacy");
@@ -83,7 +84,7 @@ describe("authenticated portal shell", () => {
     expect(logout).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the settings destination hidden from teachers", () => {
+  it("exposes exactly four destinations and hides settings from teachers", () => {
     role = "TEACHER";
     render(
       <MemoryRouter initialEntries={["/"]}>
@@ -92,6 +93,7 @@ describe("authenticated portal shell", () => {
     );
 
     expect(screen.queryByRole("link", { name: "Impostazioni" })).toBeNull();
+    expect(screen.getAllByRole("link", { name: /Bacheca|Risorse|Calendario|Gruppi e docenti/ })).toHaveLength(4);
     expect(screen.getByRole("link", { name: "Bacheca" }).getAttribute("aria-current")).toBe("page");
   });
 });

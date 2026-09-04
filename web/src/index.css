@@ -1094,15 +1094,28 @@ button {
   }
 
   .portal-nav {
-    grid-column: 1 / -1;
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 30;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.35rem;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 0;
+    width: 100%;
+    border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--surface);
+    box-shadow: 0 -4px 16px rgb(38 24 22 / 10%);
   }
 
   .portal-nav__link {
-    padding: 0.62rem 0.4rem;
-    border: 1px solid transparent;
+    display: grid;
+    min-height: 44px;
+    place-items: center;
+    padding: 0.45rem 0.25rem;
+    border: 0;
+    border-radius: 0;
+    font-size: 0.72rem;
   }
 
   .portal-nav__link:not(.portal-nav__link--active) {
@@ -1117,6 +1130,7 @@ button {
   .portal-main {
     width: min(100% - 1rem, 80rem);
     padding-top: 1.25rem;
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
   }
 
   .legal-main {

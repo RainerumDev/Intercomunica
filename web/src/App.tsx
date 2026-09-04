@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, NavLink, useLocation } from "react-router-dom"
 import { useAuth } from "./auth";
 import Login from "./pages/Login";
 import Bacheca from "./pages/Bacheca";
+import Risorse from "./pages/Risorse";
 import Directory from "./pages/Directory";
 import Calendario from "./pages/Calendario";
 import AdminSettings from "./pages/AdminSettings";
@@ -36,11 +37,14 @@ function Nav() {
           <NavLink to="/" end className={linkClass}>
             Bacheca
           </NavLink>
-          <NavLink to="/directory" className={linkClass}>
-            Gruppi & Docenti
+          <NavLink to="/risorse" className={linkClass}>
+            Risorse
           </NavLink>
           <NavLink to="/calendario" className={linkClass}>
             Calendario
+          </NavLink>
+          <NavLink to="/directory" className={linkClass}>
+            Gruppi e docenti
           </NavLink>
           {me?.role === "ADMIN" && (
             <NavLink to="/admin/settings" className={linkClass}>
@@ -110,6 +114,7 @@ export default function App() {
       <main id="main-content" tabIndex={-1} className="portal-main">
         <Routes>
           <Route path="/" element={<Bacheca />} />
+          <Route path="/risorse" element={<Risorse />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="/directory" element={<Directory />} />
           <Route path="/calendario" element={<Calendario />} />

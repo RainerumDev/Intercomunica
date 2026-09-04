@@ -1,17 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { CalendarResources } from "../components/CalendarResources";
-import ResourceCard from "../components/ResourceCard";
-import type { BachecaPayload, BachecaSection, CalendarLinks } from "../types";
-
-const unavailableCalendarLinks: CalendarLinks = {
-  generalGoogleUrl: null,
-  personalIcsUrl: null,
-  personalWebcalUrl: null,
-  personalFeedEligible: false,
-  lastFetchedAt: null,
-};
+import type { BachecaPayload, BachecaSection } from "../types";
 
 const dateFmt = new Intl.DateTimeFormat("it-IT", {
   weekday: "short",
@@ -47,26 +37,13 @@ export default function Bacheca() {
   const { me } = useAuth();
   const [payload, setPayload] = useState<BachecaPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [calendarLinks, setCalendarLinks] = useState<CalendarLinks | null>(null);
-  const [calendarLinksError, setCalendarLinksError] = useState<string | null>(null);
 
   useEffect(() => {
     api
       .get<BachecaPayload>("/api/bacheca")
       .then(setPayload)
       .catch((e: Error) => setError(e.message));
-
-    api
-      .get<CalendarLinks>("/api/calendar-links")
-      .then(setCalendarLinks)
-      .catch((e: Error) => setCalendarLinksError(e.message));
   }, []);
-
-  const rotateCalendarLink = async () => {
-    const links = await api.post<CalendarLinks>("/api/calendar-links/rotate");
-    setCalendarLinks(links);
-    return links;
-  };
 
   return (
     <div className="page">
@@ -75,21 +52,9 @@ export default function Bacheca() {
           Ciao{me?.name ? `, ${me.name.split(" ")[0]}` : ""} 👋
         </h1>
         <p className="page-intro">
-          Le risorse condivise e i tuoi prossimi impegni, organizzati per categoria.
+          I tuoi prossimi impegni, organizzati per categoria.
         </p>
       </div>
-
-      <CalendarResources
-        links={calendarLinks ?? unavailableCalendarLinks}
-        onRotate={rotateCalendarLink}
-        statusMessage={
-          calendarLinksError
-            ? `Impossibile caricare i collegamenti del calendario: ${calendarLinksError}`
-            : calendarLinks
-              ? undefined
-              : "Caricamento collegamenti calendario…"
-        }
-      />
 
       {error ? (
         <p role="alert" className="feedback feedback--error">{error}</p>
@@ -97,21 +62,6 @@ export default function Bacheca() {
         <p role="status" aria-live="polite" className="portal-status">Caricamento bacheca…</p>
       ) : (
         <>
-          <section className="section-block">
-            <h2 className="section-heading">Risorse condivise</h2>
-            {payload.resources.length === 0 ? (
-              <div className="empty-state">
-                Nessuna risorsa condivisa disponibile.
-              </div>
-            ) : (
-              <div className="card-grid">
-                {payload.resources.map((resource) => (
-                  <ResourceCard key={resource.id} resource={resource} />
-                ))}
-              </div>
-            )}
-          </section>
-
           <section className="section-block">
             <h2 className="section-heading">Prossimi eventi</h2>
             {payload.eventSections.length === 0 && (
