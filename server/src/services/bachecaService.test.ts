@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import type { SectionInputEvent } from "./bachecaService.js";
 
 const bachecaRepository = vi.hoisted(() => ({
@@ -7,6 +7,14 @@ const bachecaRepository = vi.hoisted(() => ({
 }));
 
 vi.mock("../db.js", () => ({ prisma: bachecaRepository }));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 let counter = 0;
 function ev(overrides: Partial<SectionInputEvent> & { tagNames?: string[] }): SectionInputEvent {
@@ -79,4 +87,58 @@ it("returns event sections without bacheca resources", async () => {
   const payload = await bachecaForUser("teacher-1");
 
   expect(payload).toEqual({ eventSections: expectedEventSections });
+});
+
+describe("eventSectionsForUser query contract", () => {
+  const fixedNow = new Date("2026-09-04T07:15:00.000Z");
+
+  it("filters by unexpired global or matching-subgroup events and orders by start", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(fixedNow);
+    bachecaRepository.subgroupMember.findMany.mockResolvedValue([
+      { subgroupId: "class-1" },
+      { subgroupId: "class-2" },
+    ]);
+    bachecaRepository.event.findMany.mockResolvedValue([]);
+
+    const { eventSectionsForUser } = await import("./bachecaService.js");
+    await eventSectionsForUser("teacher-with-groups");
+
+    expect(bachecaRepository.subgroupMember.findMany).toHaveBeenCalledWith({
+      where: { userId: "teacher-with-groups" },
+    });
+    expect(bachecaRepository.event.findMany).toHaveBeenCalledWith({
+      where: {
+        endsAt: { gte: fixedNow },
+        OR: [
+          { isGlobal: true },
+          {
+            isGlobal: false,
+            subgroups: { some: { subgroupId: { in: ["class-1", "class-2"] } } },
+          },
+        ],
+      },
+      include: { tags: { include: { tag: true } } },
+      orderBy: { startsAt: "asc" },
+    });
+  });
+
+  it("queries only global unexpired events when the user has no memberships", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(fixedNow);
+    bachecaRepository.subgroupMember.findMany.mockResolvedValue([]);
+    bachecaRepository.event.findMany.mockResolvedValue([]);
+
+    const { eventSectionsForUser } = await import("./bachecaService.js");
+    await eventSectionsForUser("teacher-without-groups");
+
+    expect(bachecaRepository.event.findMany).toHaveBeenCalledWith({
+      where: {
+        endsAt: { gte: fixedNow },
+        OR: [{ isGlobal: true }],
+      },
+      include: { tags: { include: { tag: true } } },
+      orderBy: { startsAt: "asc" },
+    });
+  });
 });

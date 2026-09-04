@@ -106,7 +106,7 @@ export default function App() {
   }
 
   return (
-    <div className="portal-shell">
+    <div className="portal-shell portal-shell--authenticated">
       <a href="#main-content" className="skip-link">
         Vai al contenuto principale
       </a>

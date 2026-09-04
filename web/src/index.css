@@ -1192,6 +1192,10 @@ button {
 }
 
 @media (max-width: 767px) {
+  .portal-shell--authenticated {
+    padding-bottom: calc(2.75rem + 2px + env(safe-area-inset-bottom));
+  }
+
   .portal-header__inner {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.75rem;
@@ -1257,7 +1261,17 @@ button {
   .portal-main {
     width: min(100% - 1rem, 80rem);
     padding-top: 1.25rem;
-    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+    padding-bottom: 4rem;
+  }
+
+  .search-control .form-control {
+    min-block-size: 44px;
+  }
+
+  .search-control .text-action,
+  .event-stream__more {
+    min-block-size: 44px;
+    min-inline-size: 44px;
   }
 
   .legal-main {

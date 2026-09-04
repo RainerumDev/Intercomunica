@@ -49,6 +49,19 @@ function romeDayStart(year: number, month: number, day: number): Date {
   return new Date(candidate.getTime() - (actualUtc - desiredUtc));
 }
 
+function dateKey({ year, month, day }: Pick<DateParts, "year" | "month" | "day">): string {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function allDayDateKey(value: string): string {
+  const date = new Date(value);
+  return dateKey({
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  });
+}
+
 export function flattenBachecaEvents(sections: readonly BachecaSection[]): BachecaEvent[] {
   const eventsById = new Map<string, BachecaEvent>();
 
@@ -91,15 +104,22 @@ export function partitionBachecaEvents(
   now: Date,
 ): { today: BachecaEvent[]; upcoming: BachecaEvent[] } {
   const today = romeDateParts(now);
+  const todayDate = dateKey(today);
   const todayStart = romeDayStart(today.year, today.month, today.day);
   const tomorrowStart = romeDayStart(today.year, today.month, today.day + 1);
 
   return {
     today: events.filter((event) => {
+      if (event.allDay) {
+        return allDayDateKey(event.startsAt) <= todayDate
+          && todayDate < allDayDateKey(event.endsAt);
+      }
       const startsAt = new Date(event.startsAt);
       const endsAt = new Date(event.endsAt);
       return startsAt < tomorrowStart && endsAt >= todayStart;
     }),
-    upcoming: events.filter((event) => new Date(event.startsAt) >= tomorrowStart),
+    upcoming: events.filter((event) => event.allDay
+      ? allDayDateKey(event.startsAt) > todayDate
+      : new Date(event.startsAt) >= tomorrowStart),
   };
 }

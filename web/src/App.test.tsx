@@ -70,6 +70,7 @@ describe("authenticated portal shell", () => {
 
     const navigation = screen.getByRole("navigation", { name: "Navigazione principale" });
     expect(navigation).toBeTruthy();
+    expect(container.querySelector(".portal-shell--authenticated")).toBeTruthy();
     expect(screen.getAllByRole("link", { name: /Bacheca|Risorse|Calendario|Gruppi e docenti|Impostazioni/ }))
       .toHaveLength(5);
     expect(screen.getByRole("link", { name: "Risorse" }).getAttribute("aria-current")).toBe("page");
