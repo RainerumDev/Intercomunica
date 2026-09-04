@@ -67,26 +67,38 @@ export default function Risorse() {
         <p className="page-intro">Collegamenti ai calendari e materiali condivisi dalla scuola.</p>
       </div>
 
-      <section className="section-block" aria-labelledby="resources-search-title">
-        <h2 id="resources-search-title" className="section-heading">Risorse condivise</h2>
-        <div className="search-control">
-          <label htmlFor="resources-search" className="sr-only">Cerca nelle risorse</label>
-          <input
-            id="resources-search"
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Cerca nelle risorse"
-            className="form-control"
-            aria-label="Cerca nelle risorse"
-          />
-          {query && (
-            <button type="button" onClick={() => setQuery("")} className="text-action">
-              Cancella ricerca
-            </button>
-          )}
-        </div>
+      <div className="search-control">
+        <label htmlFor="resources-search" className="sr-only">Cerca nelle risorse</label>
+        <input
+          id="resources-search"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Cerca nelle risorse"
+          className="form-control"
+          aria-label="Cerca nelle risorse"
+        />
+        {query && (
+          <button type="button" onClick={() => setQuery("")} className="text-action">
+            Cancella ricerca
+          </button>
+        )}
+      </div>
 
+      <CalendarResources
+        links={calendarLinks ?? unavailableCalendarLinks}
+        onRotate={rotateCalendarLink}
+        statusMessage={
+          calendarLinksError
+            ? `Impossibile caricare i collegamenti del calendario: ${calendarLinksError}`
+            : calendarLinks
+              ? undefined
+              : "Caricamento collegamenti calendario…"
+        }
+      />
+
+      <section className="section-block" aria-labelledby="resources-title">
+        <h2 id="resources-title" className="section-heading">Risorse condivise</h2>
         {resourcesError ? (
           <p role="alert" className="feedback feedback--error">
             Impossibile caricare le risorse: {resourcesError}
@@ -103,18 +115,6 @@ export default function Risorse() {
           </div>
         )}
       </section>
-
-      <CalendarResources
-        links={calendarLinks ?? unavailableCalendarLinks}
-        onRotate={rotateCalendarLink}
-        statusMessage={
-          calendarLinksError
-            ? `Impossibile caricare i collegamenti del calendario: ${calendarLinksError}`
-            : calendarLinks
-              ? undefined
-              : "Caricamento collegamenti calendario…"
-        }
-      />
     </div>
   );
 }

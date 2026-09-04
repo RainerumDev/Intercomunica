@@ -93,16 +93,22 @@ describe("Risorse", () => {
       within(card).getByRole("heading", { level: 3 }).textContent,
     )).toEqual(["Vademecum", "Registro elettronico", "Circolari"]);
 
-    await user.type(screen.getByRole("searchbox", { name: "Cerca nelle risorse" }), "registro");
+    const search = screen.getByRole("searchbox", { name: "Cerca nelle risorse" });
+    const calendars = screen.getByRole("heading", { name: "Calendari" });
+    const firstResource = screen.getByRole("heading", { name: "Vademecum" });
+    expect(search.compareDocumentPosition(calendars) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(calendars.compareDocumentPosition(firstResource) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await user.type(search, "registro");
     expect(screen.getByRole("heading", { name: "Registro elettronico" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Vademecum" })).toBeNull();
 
-    await user.clear(screen.getByRole("searchbox", { name: "Cerca nelle risorse" }));
-    await user.type(screen.getByRole("searchbox", { name: "Cerca nelle risorse" }), "archivio scolastico");
+    await user.clear(search);
+    await user.type(search, "archivio scolastico");
     expect(screen.getByRole("heading", { name: "Circolari" })).toBeTruthy();
 
-    await user.clear(screen.getByRole("searchbox", { name: "Cerca nelle risorse" }));
-    await user.type(screen.getByRole("searchbox", { name: "Cerca nelle risorse" }), "circolari.example.org");
+    await user.clear(search);
+    await user.type(search, "circolari.example.org");
     expect(screen.getByRole("heading", { name: "Circolari" })).toBeTruthy();
   });
 
