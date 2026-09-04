@@ -74,6 +74,7 @@ export interface SharedResource {
   description: string | null;
   previewEnabled: boolean;
   previewImageUrl: string | null;
+  hasPreviewImage: boolean;
   previewSiteName: string | null;
   previewFetchedAt: string | null;
   isGlobal: boolean;
@@ -85,7 +86,7 @@ export interface SharedResource {
 
 export type SharedResourceDraft = Omit<
   SharedResource,
-  "id" | "previewFetchedAt" | "sortOrder" | "createdAt" | "updatedAt"
+  "id" | "previewFetchedAt" | "sortOrder" | "createdAt" | "updatedAt" | "hasPreviewImage"
 >;
 
 export interface BachecaPayload {

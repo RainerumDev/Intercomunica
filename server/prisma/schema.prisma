@@ -102,6 +102,8 @@ model SharedResource {
   description      String?
   previewEnabled   Boolean  @default(true)
   previewImageUrl  String?
+  previewImageData Bytes?   @db.ByteA
+  previewImageMimeType String?
   previewSiteName  String?
   isGlobal         Boolean  @default(false)
   sortOrder        Int

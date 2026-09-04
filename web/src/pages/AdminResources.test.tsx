@@ -23,6 +23,7 @@ function resource(id: string, title: string, sortOrder: number): SharedResource 
     description: null,
     previewEnabled: false,
     previewImageUrl: null,
+    hasPreviewImage: false,
     previewSiteName: null,
     previewFetchedAt: null,
     isGlobal: true,

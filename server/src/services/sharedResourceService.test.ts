@@ -6,6 +6,7 @@ import {
   resourceInputSchema,
   resourceOrderSchema,
   type ResourceRecord,
+  type ResourceImage,
   type SharedResourceRepository,
 } from "./sharedResourceService.js";
 import type { LinkPreview } from "./linkPreview.js";
@@ -20,6 +21,7 @@ function resource(overrides: Partial<ResourceRecord> & Pick<ResourceRecord, "id"
     description: null,
     previewEnabled: true,
     previewImageUrl: null,
+    hasPreviewImage: false,
     previewSiteName: null,
     previewFetchedAt: null,
     isGlobal: false,
@@ -60,7 +62,7 @@ class FakeResourceRepository implements SharedResourceRepository {
     return found ? cloneResource(found) : null;
   }
 
-  async createResource(data: Omit<ResourceRecord, "id" | "createdAt" | "updatedAt">): Promise<ResourceRecord> {
+  async createResource(data: Parameters<SharedResourceRepository["createResource"]>[0]): Promise<ResourceRecord> {
     const created = resource({
       ...data,
       id: `new-${this.nextId++}`,
@@ -73,7 +75,7 @@ class FakeResourceRepository implements SharedResourceRepository {
 
   async updateResource(
     id: string,
-    data: Partial<Omit<ResourceRecord, "id" | "createdAt" | "updatedAt">>
+    data: Parameters<SharedResourceRepository["updateResource"]>[1]
   ): Promise<ResourceRecord> {
     const index = this.resources.findIndex((candidate) => candidate.id === id);
     if (index === -1) throw new Error(`Resource ${id} was not found`);
@@ -92,6 +94,10 @@ class FakeResourceRepository implements SharedResourceRepository {
     const index = this.resources.findIndex((candidate) => candidate.id === id);
     if (index === -1) throw new Error(`Resource ${id} was not found`);
     this.resources.splice(index, 1);
+  }
+
+  async findResourceImage(_id: string): Promise<ResourceImage | null> {
+    return null;
   }
 
   async listUserSubgroupIds(userId: string): Promise<string[]> {
@@ -181,6 +187,28 @@ describe("resourceInputSchema", () => {
 });
 
 describe("shared resources", () => {
+  it("serializes stored preview bytes as a boolean without exposing the bytes", async () => {
+    const previewImageData = new Uint8Array([137, 80, 78, 71]);
+    const repository = createPrismaSharedResourceRepository({
+      sharedResource: {
+        findMany: vi.fn().mockResolvedValue([{
+          ...resource({ id: "resource-1", previewImageUrl: null }),
+          previewImageData,
+          previewImageMimeType: "image/png",
+          subgroups: [],
+        }]),
+      },
+      subgroupMember: {},
+      $transaction: vi.fn(),
+    } as unknown as Parameters<typeof createPrismaSharedResourceRepository>[0]);
+
+    const [publicRecord] = await repository.listResources();
+
+    expect(publicRecord).toMatchObject({ hasPreviewImage: true, previewImageUrl: null });
+    expect(publicRecord).not.toHaveProperty("previewImageData");
+    expect(publicRecord).not.toHaveProperty("previewImageMimeType");
+  });
+
   it("runs generic resource transactions with Serializable P2034 retry", async () => {
     const transactionClient = {} as Prisma.TransactionClient;
     const rootClient = {

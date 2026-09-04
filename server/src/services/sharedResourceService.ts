@@ -67,6 +67,7 @@ export type ResourceRecord = {
   description: string | null;
   previewEnabled: boolean;
   previewImageUrl: string | null;
+  hasPreviewImage: boolean;
   previewSiteName: string | null;
   previewFetchedAt: Date | null;
   isGlobal: boolean;
@@ -74,6 +75,13 @@ export type ResourceRecord = {
   createdAt: Date;
   updatedAt: Date;
   subgroupIds: string[];
+};
+
+export type ResourceImage = { data: Uint8Array; mimeType: string };
+
+type ResourceImageStorage = {
+  previewImageData: Uint8Array | null;
+  previewImageMimeType: string | null;
 };
 
 export class ResourceNotFoundError extends Error {
@@ -90,12 +98,16 @@ export class InvalidResourceOrderError extends Error {
   }
 }
 
-type ResourceCreateData = Omit<ResourceRecord, "id" | "createdAt" | "updatedAt">;
-type ResourceUpdateData = Partial<Omit<ResourceRecord, "id" | "createdAt" | "updatedAt">>;
+export type ResourceCreateData = Omit<ResourceRecord, "id" | "createdAt" | "updatedAt" | "hasPreviewImage"> &
+  ResourceImageStorage;
+export type ResourceUpdateData = Partial<
+  Omit<ResourceRecord, "id" | "createdAt" | "updatedAt" | "hasPreviewImage"> & ResourceImageStorage
+>;
 
 export interface SharedResourceRepository {
   listResources(): Promise<ResourceRecord[]>;
   findResource(id: string): Promise<ResourceRecord | null>;
+  findResourceImage(id: string): Promise<ResourceImage | null>;
   createResource(data: ResourceCreateData): Promise<ResourceRecord>;
   updateResource(id: string, data: ResourceUpdateData): Promise<ResourceRecord>;
   deleteResource(id: string): Promise<void>;
@@ -113,7 +125,13 @@ function sortedResources(resources: ResourceRecord[]): ResourceRecord[] {
 }
 
 function resourceData(input: SharedResourceInput, previewFetchedAt: Date | null): ResourceCreateData {
-  return { ...input, previewFetchedAt, sortOrder: 0 };
+  return {
+    ...input,
+    previewFetchedAt,
+    previewImageData: null,
+    previewImageMimeType: null,
+    sortOrder: 0,
+  };
 }
 
 function normalizeInput(input: SharedResourceInput): SharedResourceInput {
@@ -233,6 +251,7 @@ function toResourceRecord(resource: PrismaResourceWithSubgroups): ResourceRecord
     description: resource.description,
     previewEnabled: resource.previewEnabled,
     previewImageUrl: resource.previewImageUrl,
+    hasPreviewImage: resource.previewImageData !== null && resource.previewImageMimeType !== null,
     previewSiteName: resource.previewSiteName,
     previewFetchedAt: resource.previewFetchedAt,
     isGlobal: resource.isGlobal,
@@ -257,6 +276,16 @@ function resourceRepositoryOperations(
       return resource ? toResourceRecord(resource) : null;
     },
 
+    async findResourceImage(id) {
+      const resource = await client.sharedResource.findUnique({
+        where: { id },
+        select: { previewImageData: true, previewImageMimeType: true },
+      });
+      return resource && resource.previewImageData !== null && resource.previewImageMimeType !== null
+        ? { data: resource.previewImageData, mimeType: resource.previewImageMimeType }
+        : null;
+    },
+
     async createResource(data) {
       const resource = await client.sharedResource.create({
         data: {
@@ -265,6 +294,8 @@ function resourceRepositoryOperations(
           description: data.description,
           previewEnabled: data.previewEnabled,
           previewImageUrl: data.previewImageUrl,
+          previewImageData: data.previewImageData === null ? null : Buffer.from(data.previewImageData),
+          previewImageMimeType: data.previewImageMimeType,
           previewSiteName: data.previewSiteName,
           previewFetchedAt: data.previewFetchedAt,
           isGlobal: data.isGlobal,
@@ -277,11 +308,14 @@ function resourceRepositoryOperations(
     },
 
     async updateResource(id, data) {
-      const { subgroupIds, ...fields } = data;
+      const { subgroupIds, previewImageData, ...fields } = data;
       const resource = await client.sharedResource.update({
         where: { id },
         data: {
           ...fields,
+          ...(previewImageData === undefined
+            ? {}
+            : { previewImageData: previewImageData === null ? null : Buffer.from(previewImageData) }),
           ...(subgroupIds === undefined
             ? {}
             : { subgroups: { deleteMany: {}, create: subgroupIds.map((subgroupId) => ({ subgroupId })) } }),
