@@ -49,20 +49,22 @@ export interface EventCalendarCapabilities {
   generalCalendarWritable: boolean;
 }
 
+export interface BachecaEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  startsAt: string;
+  endsAt: string;
+  allDay: boolean;
+  isGlobal: boolean;
+  tags: string[];
+}
+
 export interface BachecaSection {
   tag: string;
   color: string | null;
-  events: {
-    id: string;
-    title: string;
-    description: string | null;
-    location: string | null;
-    startsAt: string;
-    endsAt: string;
-    allDay: boolean;
-    isGlobal: boolean;
-    tags: string[];
-  }[];
+  events: BachecaEvent[];
 }
 
 export interface SharedResource {
@@ -87,7 +89,6 @@ export type SharedResourceDraft = Omit<
 >;
 
 export interface BachecaPayload {
-  resources: SharedResource[];
   eventSections: BachecaSection[];
 }
 
