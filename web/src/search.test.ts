@@ -39,4 +39,15 @@ describe("filterBachecaEvents", () => {
     expect(filterBachecaEvents(events, "riunione aula magna", "Collegi"))
       .toEqual([events[0]]);
   });
+
+  it("matches a selected category exactly rather than by prefix or superstring", () => {
+    const similarlyNamed = [
+      ...events,
+      { ...events[0], id: "collegiali", tags: ["Collegiali"] },
+      { ...events[0], id: "college", tags: ["College"] },
+    ];
+
+    expect(filterBachecaEvents(similarlyNamed, "", "Collegi").map(({ id }) => id))
+      .toEqual(["collegio"]);
+  });
 });

@@ -93,4 +93,25 @@ describe("partitionBachecaEvents", () => {
     expect(result.today.map(({ id }) => id)).toEqual(["late-today"]);
     expect(result.upcoming.map(({ id }) => id)).toEqual(["rome-midnight"]);
   });
+
+  it("keeps Rome day boundaries across the DST change under a non-Rome host timezone", () => {
+    const overlapsRomeMidnight = event({
+      id: "overlaps-rome-midnight",
+      startsAt: "2026-03-28T22:59:00.000Z",
+      endsAt: "2026-03-28T23:30:00.000Z",
+    });
+    const afterRomeMidnight = event({
+      id: "after-rome-midnight",
+      startsAt: "2026-03-29T22:00:00.000Z",
+      endsAt: "2026-03-29T23:00:00.000Z",
+    });
+
+    const result = partitionBachecaEvents(
+      [overlapsRomeMidnight, afterRomeMidnight],
+      new Date("2026-03-28T23:30:00.000Z"),
+    );
+
+    expect(result.today.map(({ id }) => id)).toEqual(["overlaps-rome-midnight"]);
+    expect(result.upcoming.map(({ id }) => id)).toEqual(["after-rome-midnight"]);
+  });
 });

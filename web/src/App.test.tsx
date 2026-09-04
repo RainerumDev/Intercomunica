@@ -96,6 +96,18 @@ describe("authenticated portal shell", () => {
     expect(screen.getAllByRole("link", { name: /Bacheca|Risorse|Calendario|Gruppi e docenti/ })).toHaveLength(4);
     expect(screen.getByRole("link", { name: "Bacheca" }).getAttribute("aria-current")).toBe("page");
   });
+
+  it("redirects a teacher deep link to admin settings to Bacheca", () => {
+    role = "TEACHER";
+    render(
+      <MemoryRouter initialEntries={["/admin/settings"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Bacheca test" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Impostazioni test" })).toBeNull();
+  });
 });
 
 describe("public portal routes", () => {
@@ -162,6 +174,20 @@ describe("public portal routes", () => {
     expect(screen.getByRole("link", { name: "Termini di servizio" }).getAttribute("href")).toBe(
       "/terms",
     );
+  });
+
+  it("redirects an anonymous Risorse deep link to login", () => {
+    signedIn = false;
+
+    render(
+      <MemoryRouter initialEntries={["/risorse"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Intercomunica" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Accedi con Google" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Risorse test" })).toBeNull();
   });
 
   it("uses the official Rainerum mark as the PNG favicon", () => {
