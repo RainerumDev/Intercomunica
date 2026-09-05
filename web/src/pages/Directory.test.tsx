@@ -409,7 +409,10 @@ describe("Directory shell state", () => {
     const search = await screen.findByRole("searchbox", { name: "Cerca gruppi" });
     await user.type(search, "uno");
     const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-    await user.click(screen.getByRole("button", { name: "Mostra dettagli di Gruppo uno" }));
+    await user.click(screen.getByRole("button", {
+      name: "Gruppo uno",
+      description: "Generale 1 membro",
+    }));
 
     expect(screen.getByTestId("directory-layout").classList.contains("directory-layout--detail-open")).toBe(true);
     expect(screen.getByRole("heading", { name: "Gruppo uno" })).not.toBeNull();

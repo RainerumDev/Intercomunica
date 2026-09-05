@@ -27,8 +27,13 @@ describe("GroupDirectory", () => {
   it("renders folder, group metadata, color indicator, complete count, and selected state", () => {
     render(<GroupDirectory sections={sections} selectedId="group-5l" onSelect={() => undefined} />);
 
-    expect(screen.getByRole("heading", { name: "Consigli di Classe · Liceo" })).not.toBeNull();
-    const row = screen.getByRole("button", { name: /CDC 5 Liceo/ });
+    const region = screen.getByRole("region", { name: "Consigli di Classe · Liceo" });
+    expect(region.querySelector("h3")?.id).not.toMatch(/\s/u);
+    expect(region.getAttribute("aria-labelledby")).toBe(region.querySelector("h3")?.id);
+    const row = screen.getByRole("button", {
+      name: "CDC 5 Liceo",
+      description: "Consiglio della classe quinta 11 membri",
+    });
     expect(row.getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText("Consiglio della classe quinta")).not.toBeNull();
     expect(screen.getByText("11 membri")).not.toBeNull();
