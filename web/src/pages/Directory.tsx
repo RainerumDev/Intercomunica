@@ -39,11 +39,14 @@ export default function Directory() {
   const [selectedSubgroup, setSelectedSubgroup] = useState<Subgroup | null>(null);
   const [newSubgroup, setNewSubgroup] = useState("");
   const [newFolder, setNewFolder] = useState("");
+  const [creatingSubgroup, setCreatingSubgroup] = useState(false);
   const [editingSubgroup, setEditingSubgroup] = useState<Subgroup | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "success" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
   const listScrollOffsetRef = useRef(0);
   const mobileDetailTriggerRef = useRef<HTMLButtonElement | null>(null);
   const mobileBackRef = useRef<HTMLButtonElement>(null);
+  const newSubgroupInputRef = useRef<HTMLInputElement>(null);
   const editDialogTitleId = useId();
   const editDialogRef = useDialogFocus({
     active: Boolean(editingSubgroup),
@@ -60,16 +63,27 @@ export default function Directory() {
   };
 
   useEffect(() => {
-    reload().catch((e: Error) => setError(e.message));
+    reload()
+      .then(() => setLoadState("success"))
+      .catch((e: Error) => {
+        setError(e.message);
+        setLoadState("error");
+      });
   }, []);
 
   useEffect(() => {
     setMobileDetailOpen(false);
   }, [tab]);
 
+  const directoryUser = useMemo(() => {
+    if (!me) return null;
+    const refreshedUser = members.find(({ id }) => id === me.id);
+    return refreshedUser ? { ...me, subgroups: refreshedUser.subgroups } : me;
+  }, [me, members]);
+
   const filtered = useMemo(
-    () => me ? filterTeachers(members, teacherQuery, teacherScope, me) : [],
-    [me, members, teacherQuery, teacherScope]
+    () => directoryUser ? filterTeachers(members, teacherQuery, teacherScope, directoryUser) : [],
+    [directoryUser, members, teacherQuery, teacherScope]
   );
 
   const groupedTeachers = useMemo(
@@ -176,9 +190,15 @@ export default function Directory() {
       setNewSubgroup("");
       setNewFolder("");
       await reload();
+      setCreatingSubgroup(false);
     } catch (e) {
       setError((e as Error).message);
     }
+  };
+
+  const openSubgroupCreation = () => {
+    setCreatingSubgroup(true);
+    window.requestAnimationFrame(() => newSubgroupInputRef.current?.focus());
   };
 
   const updateSubgroup = async (s: Subgroup) => {
@@ -239,12 +259,18 @@ export default function Directory() {
   return (
     <div className="page page--directory">
       <h1 className="page-heading">Rubrica</h1>
-      {error && <p role="alert" className="feedback feedback--error">{error}</p>}
+      {loadState === "loading" ? (
+        <p role="status" aria-live="polite" className="portal-status">Caricamento rubrica…</p>
+      ) : loadState === "error" ? (
+        <p role="alert" className="feedback feedback--error">{error}</p>
+      ) : (
+        <>
+          {error && <p role="alert" className="feedback feedback--error">{error}</p>}
 
-      <div
-        className={`directory-layout${mobileDetailOpen ? " directory-layout--detail-open" : ""}`}
-        data-testid="directory-layout"
-      >
+          <div
+            className={`directory-layout${mobileDetailOpen ? " directory-layout--detail-open" : ""}`}
+            data-testid="directory-layout"
+          >
         <div className="directory-master">
           <DirectoryTabs
             tab={tab}
@@ -262,37 +288,77 @@ export default function Directory() {
             data-testid={tab === "groups" ? "directory-list-pane" : undefined}
           >
             <section aria-labelledby="directory-groups-title">
-                <div className="section-toolbar mb-3">
-                  <h2 id="directory-groups-title" className="section-heading">Gruppi</h2>
-                  <input
-                    type="search"
-                    aria-label="Cerca gruppi"
-                    value={groupQuery}
-                    onChange={(e) => setGroupQuery(e.target.value)}
-                    placeholder="Cerca gruppo…"
-                    className="form-control"
-                  />
+                <div className="section-toolbar directory-section-toolbar mb-3">
+                  <div className="directory-section-toolbar__heading">
+                    <h2 id="directory-groups-title" className="section-heading">Gruppi</h2>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        aria-label="Nuovo gruppo"
+                        aria-controls="directory-create-group"
+                        aria-expanded={creatingSubgroup}
+                        onClick={openSubgroupCreation}
+                        className="button button--primary directory-create-command"
+                      >
+                        <span aria-hidden="true">+</span>
+                        <span className="directory-create-command__label">Nuovo gruppo</span>
+                      </button>
+                    )}
+                  </div>
+                  <div className="search-control directory-search-control">
+                    <input
+                      type="search"
+                      aria-label="Cerca gruppi"
+                      value={groupQuery}
+                      onChange={(e) => setGroupQuery(e.target.value)}
+                      placeholder="Cerca gruppo…"
+                      className="form-control"
+                    />
+                    {groupQuery && (
+                      <button type="button" onClick={() => setGroupQuery("")} className="text-action">
+                        Cancella ricerca gruppi
+                      </button>
+                    )}
+                  </div>
                 </div>
+                {isAdmin && creatingSubgroup && (
+                  <div id="directory-create-group" className="surface-card surface-card--padded directory-create-form border-dashed">
+                    <h3 className="text-sm font-medium text-gray-700 mb-2">Aggiungi nuovo sottogruppo</h3>
+                    <div className="flex flex-col gap-2">
+                      <input
+                        ref={newSubgroupInputRef}
+                        aria-label="Nome del nuovo gruppo"
+                        value={newSubgroup}
+                        onChange={(e) => setNewSubgroup(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && newSubgroup.trim() && createSubgroup()}
+                        placeholder="Nome (es. 1A)"
+                        className="form-control flex-1"
+                      />
+                      <input
+                        aria-label="Cartella del nuovo gruppo"
+                        value={newFolder}
+                        onChange={(e) => setNewFolder(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && newSubgroup.trim() && createSubgroup()}
+                        placeholder="Cartella (opzionale)"
+                        className="form-control flex-1"
+                        list="folders"
+                      />
+                      <datalist id="folders">
+                        {groupSections.map(({ label }) => <option key={label} value={label} />)}
+                      </datalist>
+                      <div className="flex justify-end gap-2">
+                        <button type="button" onClick={() => setCreatingSubgroup(false)} className="button button--neutral">Annulla</button>
+                        <button type="button" onClick={createSubgroup} disabled={!newSubgroup.trim()} className="button button--primary">Crea gruppo</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-6">
                   <GroupDirectory
                     sections={groupSections}
                     selectedId={selectedSubgroupForPane?.id ?? null}
                     onSelect={selectSubgroup}
                   />
-
-                  {isAdmin && groupQuery.trim() === "" && (
-                    <div className="surface-card surface-card--padded mt-6 border-dashed">
-                      <h4 className="text-sm font-medium text-gray-700 mb-2">Aggiungi nuovo sottogruppo</h4>
-                      <div className="flex flex-col gap-2">
-                        <input value={newSubgroup} onChange={(e) => setNewSubgroup(e.target.value)} onKeyDown={(e) => e.key === "Enter" && newSubgroup.trim() && createSubgroup()} placeholder="Nome (es. 1A)" className="form-control flex-1" />
-                        <input value={newFolder} onChange={(e) => setNewFolder(e.target.value)} onKeyDown={(e) => e.key === "Enter" && newSubgroup.trim() && createSubgroup()} placeholder="Cartella (opzionale)" className="form-control flex-1" list="folders" />
-                        <datalist id="folders">
-                          {groupSections.map(({ label }) => <option key={label} value={label} />)}
-                        </datalist>
-                        <button onClick={createSubgroup} disabled={!newSubgroup.trim()} className="button button--primary shrink-0">+ Crea</button>
-                      </div>
-                    </div>
-                  )}
                 </div>
                 {filteredSubgroups.length === 0 && (
                   <p className="field-hint py-4 text-sm">
@@ -313,14 +379,21 @@ export default function Directory() {
             <section aria-labelledby="directory-teachers-title">
                 <div className="section-toolbar mb-3">
                   <h2 id="directory-teachers-title" className="section-heading">Docenti</h2>
-                  <input
-                    type="search"
-                    aria-label="Cerca docenti"
-                    value={teacherQuery}
-                    onChange={(e) => setTeacherQuery(e.target.value)}
-                    placeholder="Cerca per nome, email o sottogruppo…"
-                    className="form-control"
-                  />
+                  <div className="search-control directory-search-control">
+                    <input
+                      type="search"
+                      aria-label="Cerca docenti"
+                      value={teacherQuery}
+                      onChange={(e) => setTeacherQuery(e.target.value)}
+                      placeholder="Cerca per nome, email o sottogruppo…"
+                      className="form-control"
+                    />
+                    {teacherQuery && (
+                      <button type="button" onClick={() => setTeacherQuery("")} className="text-action">
+                        Cancella ricerca docenti
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <TeacherDirectory
                   groups={groupedTeachers}
@@ -484,6 +557,8 @@ export default function Directory() {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

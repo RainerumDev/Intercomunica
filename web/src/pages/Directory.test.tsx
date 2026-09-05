@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
@@ -58,6 +58,16 @@ function renderDirectory(initialEntry = "/directory") {
   );
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("Directory subgroup editor dialog", () => {
   it("labels the modal, traps Tab, closes on Escape, and restores trigger focus", async () => {
     const user = userEvent.setup();
@@ -107,6 +117,30 @@ describe("Directory subgroup editor dialog", () => {
       description: "Descrizione completa",
       folder: null,
       color: null,
+    });
+  });
+
+  it("persists a non-null color selected in the admin editor", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "get").mockImplementation(((path: string) => {
+      if (path === "/api/users") return Promise.resolve([member]);
+      if (path === "/api/subgroups") return Promise.resolve([subgroup]);
+      throw new Error(`Unexpected GET ${path}`);
+    }) as typeof api.get);
+    const put = vi.spyOn(api, "put").mockResolvedValue(undefined);
+    renderDirectory("/directory?tab=groups");
+
+    await user.click(await screen.findByRole("button", { name: "Modifica gruppo" }));
+    fireEvent.change(screen.getByLabelText("Colore del sottogruppo"), {
+      target: { value: "#a1b2c3" },
+    });
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+
+    expect(put).toHaveBeenCalledWith("/api/subgroups/group-1", {
+      name: "Gruppo uno",
+      description: null,
+      folder: null,
+      color: "#A1B2C3",
     });
   });
 });
@@ -278,9 +312,110 @@ describe("Directory teacher contact book", () => {
     expect(screen.getByRole("button", { name: "Mostra dettagli di Annalisa" })).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Annalisa" })).not.toBeNull();
   });
+
+  it("refreshes the current user's memberships used by I miei gruppi after a mutation", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const currentAdmin: Member = {
+      id: "admin-1",
+      email: "admin@example.edu",
+      name: "Admin",
+      role: "ADMIN",
+      subgroups: [],
+    };
+    const sharedTeacher: Member = {
+      ...member,
+      id: "shared-teacher",
+      name: "Docente condiviso",
+    };
+    const updatedAdmin: Member = {
+      ...currentAdmin,
+      subgroups: [{ id: subgroup.id, name: subgroup.name }],
+    };
+    let usersRequest = 0;
+    vi.spyOn(api, "get").mockImplementation(((path: string) => {
+      if (path === "/api/users") {
+        usersRequest += 1;
+        return Promise.resolve(usersRequest === 1
+          ? [currentAdmin, sharedTeacher]
+          : [updatedAdmin, sharedTeacher]);
+      }
+      if (path === "/api/subgroups") return Promise.resolve([subgroup]);
+      throw new Error(`Unexpected GET ${path}`);
+    }) as typeof api.get);
+    vi.spyOn(api, "post").mockResolvedValue(undefined);
+    renderDirectory();
+
+    await user.click(await screen.findByRole("button", { name: "Mostra dettagli di Admin" }));
+    await user.click(screen.getByRole("button", { name: "Aggiungi a un sottogruppo" }));
+    await user.click(await screen.findByRole("button", { name: /Gruppo uno/ }));
+    await waitFor(() => expect(usersRequest).toBe(2));
+    await user.click(screen.getByRole("button", { name: "Torna a tutti i docenti" }));
+    await user.click(screen.getByRole("button", { name: "I miei gruppi" }));
+
+    expect(screen.getByRole("button", { name: "Mostra dettagli di Docente condiviso" })).not.toBeNull();
+  });
 });
 
 describe("Directory shell state", () => {
+  it("shows loading, failure, and successful empty states distinctly", async () => {
+    const user = userEvent.setup();
+    const users = deferred<Member[]>();
+    const groups = deferred<Subgroup[]>();
+    vi.spyOn(api, "get").mockImplementation(((path: string) => {
+      if (path === "/api/users") return users.promise;
+      if (path === "/api/subgroups") return groups.promise;
+      throw new Error(`Unexpected GET ${path}`);
+    }) as typeof api.get);
+    const view = renderDirectory();
+
+    const loading = screen.getByText("Caricamento rubrica…");
+    expect(loading.getAttribute("role")).toBe("status");
+    expect(screen.queryByText(/Nessun docente/)).toBeNull();
+    expect(screen.queryByRole("tab")).toBeNull();
+
+    users.resolve([]);
+    groups.resolve([]);
+    expect(await screen.findByText("Nessun docente corrisponde alla ricerca e ai filtri.")).not.toBeNull();
+    expect(screen.getByRole("tab", { name: "Docenti 0" })).not.toBeNull();
+    await user.click(screen.getByRole("tab", { name: "Gruppi 0" }));
+    expect(screen.getByText("Nessun sottogruppo definito.")).not.toBeNull();
+
+    view.unmount();
+    vi.restoreAllMocks();
+    vi.spyOn(api, "get").mockRejectedValue(new Error("Rubrica non disponibile"));
+    renderDirectory();
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Rubrica non disponibile");
+    expect(screen.queryByText(/Nessun docente/)).toBeNull();
+    expect(screen.queryByText(/Nessun sottogruppo/)).toBeNull();
+    expect(screen.queryByRole("tab")).toBeNull();
+  });
+
+  it("keeps the admin group-creation entry point reachable during search and preserves its API", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "get").mockImplementation(((path: string) => {
+      if (path === "/api/users") return Promise.resolve([member]);
+      if (path === "/api/subgroups") return Promise.resolve([subgroup]);
+      throw new Error(`Unexpected GET ${path}`);
+    }) as typeof api.get);
+    const post = vi.spyOn(api, "post").mockResolvedValue(undefined);
+    renderDirectory("/directory?tab=groups");
+
+    await user.type(await screen.findByRole("searchbox", { name: "Cerca gruppi" }), "nessun risultato");
+    const createEntryPoint = screen.getByRole("button", { name: "Nuovo gruppo" });
+    expect(createEntryPoint.getAttribute("aria-expanded")).toBe("false");
+    await user.click(createEntryPoint);
+    await user.type(screen.getByRole("textbox", { name: "Nome del nuovo gruppo" }), "Gruppo due");
+    await user.type(screen.getByRole("combobox", { name: "Cartella del nuovo gruppo" }), "Dipartimenti");
+    await user.click(screen.getByRole("button", { name: "Crea gruppo" }));
+
+    expect(post).toHaveBeenCalledWith("/api/subgroups", {
+      name: "Gruppo due",
+      folder: "Dipartimenti",
+    });
+  });
+
   it("pushes tab changes to history and restores the prior tab with browser Back", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "get").mockImplementation(((path: string) => {
@@ -327,6 +462,13 @@ describe("Directory shell state", () => {
     expect(screen.getByRole("searchbox", { name: "Cerca gruppi" }).getAttribute("value")).toBe("uno");
     await user.click(screen.getByRole("tab", { name: /Docenti/ }));
     expect(screen.getByRole("searchbox", { name: "Cerca docenti" }).getAttribute("value")).toBe("docente");
+
+    await user.click(screen.getByRole("button", { name: "Cancella ricerca docenti" }));
+    expect(screen.getByRole("searchbox", { name: "Cerca docenti" }).getAttribute("value")).toBe("");
+    await user.click(screen.getByRole("tab", { name: /Gruppi/ }));
+    expect(screen.getByRole("searchbox", { name: "Cerca gruppi" }).getAttribute("value")).toBe("uno");
+    await user.click(screen.getByRole("button", { name: "Cancella ricerca gruppi" }));
+    expect(screen.getByRole("searchbox", { name: "Cerca gruppi" }).getAttribute("value")).toBe("");
   });
 
   it.each(["/directory", "/directory?tab=invalid"])(

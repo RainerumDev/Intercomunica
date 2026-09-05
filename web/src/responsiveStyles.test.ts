@@ -80,6 +80,20 @@ describe("mobile responsive controls", () => {
     expect(shortActions).toContain("min-block-size: 44px");
     expect(shortActions).toContain("min-inline-size: 44px");
   });
+
+  it("gives Directory and its editor controls 44px touch targets", () => {
+    const controls = ruleDeclarations(".page--directory button,\n  .page--directory input,\n  .page--directory textarea");
+    expect(controls).toContain("min-block-size: 44px");
+
+    const compactControls = ruleDeclarations(".page--directory button,\n  .page--directory input[type=\"color\"]");
+    expect(compactControls).toContain("min-inline-size: 44px");
+
+    const createAction = ruleDeclarations(".directory-create-command");
+    expect(propertyValue(createAction, "position")).toBe("fixed");
+    expect(propertyValue(createAction, "width")).toBe("48px");
+    expect(propertyValue(createAction, "height")).toBe("48px");
+    expect(propertyValue(createAction, "bottom")).toContain("env(safe-area-inset-bottom)");
+  });
 });
 
 describe("authenticated mobile shell", () => {
