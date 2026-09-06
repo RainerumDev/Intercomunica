@@ -40,6 +40,51 @@ function previewDependencies(
 
 const fakePublicDependencies = previewDependencies([]);
 
+describe("preview image fallbacks", () => {
+  it("recognizes a redirect to Google sign-in without downloading the login page", async () => {
+    const dependencies = previewDependencies([
+      new Response(null, { status: 302, headers: { location: "https://accounts.google.com/signin" } }),
+    ]);
+    const fetch = vi.spyOn(dependencies, "fetch");
+    await expect(fetchLinkPreview("https://drive.google.com/guide", dependencies)).rejects.toThrow(/richiede l'accesso/);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([401, 403])("explains authentication failure %s", async (status) => {
+    await expect(fetchLinkPreview("https://docs.google.com/guide", previewDependencies([
+      new Response(null, { status }),
+    ]))).rejects.toThrow(/richiede l'accesso/);
+  });
+
+  it("does not use SVG favicons, arbitrary body photos or active inline image URLs", async () => {
+    const result = await fetchLinkPreview("https://example.org/page", previewDependencies([
+      new Response('<meta name="twitter:image" content="data:image/svg+xml,svg"><link rel="icon" href="/icon.svg"><img src="/private-person.jpg">', { headers: { "content-type": "text/html" } }),
+    ]));
+    expect(result.imageUrl).toBeNull();
+  });
+
+  it.each([
+    ['<meta name="twitter:image" content="/card.png">', '/card.png'],
+    ['<link rel="apple-touch-icon" href="/icon.png">', '/icon.png'],
+    ['<link rel="icon" type="image/png" href="/favicon.png">', '/favicon.png'],
+    ['<img alt="Logo scuola" src="/logo.png">', '/logo.png'],
+  ])("finds an image without Open Graph: %s", async (html, path) => {
+    const result = await fetchLinkPreview("https://example.org/page", previewDependencies([
+      new Response(html, { headers: { "content-type": "text/html" } }),
+    ]));
+    expect(result.imageUrl).toBe(`https://example.org${path}`);
+  });
+
+  it("prefers Open Graph and reads ordinary descriptions", async () => {
+    const result = await fetchLinkPreview("https://example.org/page", previewDependencies([
+      new Response('<link rel="icon" href="/icon.png"><meta name="description" content="Una guida"><meta property="og:image" content="/card.jpg">', {
+        headers: { "content-type": "text/html" },
+      }),
+    ]));
+    expect(result).toMatchObject({ imageUrl: "https://example.org/card.jpg", description: "Una guida" });
+  });
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
 });

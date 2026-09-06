@@ -32,6 +32,49 @@ afterEach(() => {
 });
 
 describe("ResourceEditor", () => {
+  it("explains missing automatic images and keeps an uploaded cover", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminResourcesApi, "preview").mockResolvedValue(preview("Guida", "https://example.org"));
+    const imageUrl = "data:image/png;base64,iVBORw0KGgo=";
+    render(<ResourceEditor initialDraft={{ ...emptyResourceDraft, url: "https://example.org", previewEnabled: true, previewImageUrl: imageUrl }} subgroups={[]} onSave={async () => {}} onCancel={() => {}} />);
+    await user.click(screen.getByRole("button", { name: "Genera anteprima" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("non offre un'immagine"));
+    expect(document.querySelector("img")?.getAttribute("src")).toBe(imageUrl);
+  });
+
+  it("rejects an oversized cover without changing the draft", async () => {
+    const user = userEvent.setup();
+    render(<ResourceEditor initialDraft={emptyResourceDraft} subgroups={[]} onSave={async () => {}} onCancel={() => {}} />);
+    await user.upload(screen.getByLabelText("Carica copertina"), new File([new Uint8Array(512 * 1024 + 1)], "big.png", { type: "image/png" }));
+    expect(screen.getByRole("alert").textContent).toContain("512 KiB");
+    expect(document.querySelector("img")).toBeNull();
+  });
+
+  it("shows the fetched image immediately and retains the original resource URL", async () => {
+    const user = userEvent.setup();
+    const imageUrl = "data:image/png;base64,iVBORw0KGgo=";
+    vi.spyOn(adminResourcesApi, "preview").mockResolvedValue({
+      ...preview("Guida", "https://accounts.google.com/signin"), imageUrl,
+    });
+    const onSave = vi.fn(async () => {});
+    render(<ResourceEditor initialDraft={{ ...emptyResourceDraft, url: "https://drive.google.com/guide" }} subgroups={[]} onSave={onSave} onCancel={() => {}} />);
+    await user.click(screen.getByRole("button", { name: "Genera anteprima" }));
+    await waitFor(() => expect(document.querySelector("img")?.getAttribute("src")).toBe(imageUrl));
+    expect((screen.getByRole("textbox", { name: "URL" }) as HTMLInputElement).value).toBe("https://drive.google.com/guide");
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ previewImageUrl: imageUrl }));
+  });
+
+  it("allows a cover upload when automatic previews cannot access the resource", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(async () => {});
+    render(<ResourceEditor initialDraft={{ ...emptyResourceDraft, url: "https://docs.google.com/guide", title: "Guida" }} subgroups={[]} onSave={onSave} onCancel={() => {}} />);
+    await user.upload(screen.getByLabelText("Carica copertina"), new File([new Uint8Array([137,80,78,71,13,10,26,10])], "cover.png", { type: "image/png" }));
+    await waitFor(() => expect(document.querySelector("img")?.getAttribute("src")).toMatch(/^data:image\/png;base64,/));
+    await user.click(screen.getByRole("button", { name: "Salva" }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ previewEnabled: true, previewImageUrl: expect.stringMatching(/^data:image\/png;base64,/) }));
+  });
+
   it("removes unavailable subgroup IDs while preserving the rest of the edited draft", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn(async () => {});
@@ -161,7 +204,7 @@ describe("ResourceEditor", () => {
     await act(async () => first.resolve(preview("Old", "https://old.example.org/final")));
 
     await waitFor(() => {
-      expect(url.value).toBe("https://new.example.org/final");
+      expect(url.value).toBe("https://new.example.org/page");
       expect(title.value).toBe("Titolo scelto dall'admin");
     });
   });

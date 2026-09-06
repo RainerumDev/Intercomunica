@@ -4,9 +4,27 @@ import {
   fetchPublicImage,
   fetchResourcePreview,
   MAX_PREVIEW_IMAGE_BYTES,
+  decodePreviewImage,
 } from "./resourcePreviewImage.js";
 
 const PUBLIC_DNS_RESULT = [{ address: "93.184.216.34", family: 4 as const }];
+
+describe("uploaded preview image validation", () => {
+  it.each([
+    "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
+    "data:text/html;base64,PGgxPkhlbGxvPC9oMT4=",
+    "data:image/png;base64,not-base64!",
+    "data:image/jpeg;base64,iVBORw0KGgo=",
+    "data:image/png;base64,",
+    "https://example.org/image.png",
+  ])("rejects invalid cover %s", (value) => {
+    expect(decodePreviewImage(value)).toBeNull();
+  });
+
+  it("rejects an oversized upload before decoding", () => {
+    expect(decodePreviewImage(`data:image/png;base64,${Buffer.alloc(MAX_PREVIEW_IMAGE_BYTES + 1).toString("base64")}`)).toBeNull();
+  });
+});
 
 function imageDependencies(
   responses: Response[],
@@ -297,8 +315,46 @@ describe("fetchPublicImage security boundary", () => {
 });
 
 describe("fetchResourcePreview", () => {
+  it("ignores image bytes that could not be saved as a cover", async () => {
+    const result = await fetchResourcePreview("https://example.org", imageDependencies([
+      new Response('<meta property="og:image" content="/card.png">', { headers: { "content-type": "text/html" } }),
+      new Response("<html>Upstream error</html>", { headers: { "content-type": "image/png" } }),
+    ]));
+    expect(result.image).toBeNull();
+  });
+
+  it("tries the raster icon when the primary preview image is unusable", async () => {
+    const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    const result = await fetchResourcePreview("https://example.org", imageDependencies([
+      new Response('<meta property="og:image" content="/card.svg"><link rel="icon" href="/icon.png">', { headers: { "content-type": "text/html" } }),
+      new Response("<svg/>", { headers: { "content-type": "image/svg+xml" } }),
+      new Response(png, { headers: { "content-type": "image/png" } }),
+    ]));
+    expect(result.image?.data).toEqual(png);
+    expect(result.preview.imageUrl).toBe("https://example.org/icon.png");
+    expect(result.preview).not.toHaveProperty("imageCandidates");
+  });
+
+  it("shares one image deadline across fallback candidates", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetch = vi.fn<LinkPreviewDependencies["fetch"]>()
+        .mockResolvedValueOnce(new Response('<meta property="og:image" content="/card.png"><link rel="icon" href="/icon.png">', { headers: { "content-type": "text/html" } }))
+        .mockImplementationOnce(() => new Promise((resolve) => setTimeout(() => resolve(new Response(null, { status: 404 })), 40)))
+        .mockImplementationOnce(() => new Promise(() => {}));
+      const pending = fetchResourcePreview("https://example.org", {
+        lookup: async () => PUBLIC_DNS_RESULT, fetch, deadlineMs: 50,
+      });
+      await vi.advanceTimersByTimeAsync(51);
+      expect((await pending).image).toBeNull();
+      expect(fetch).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("returns a validated PNG alongside the page metadata", async () => {
-    const png = new Uint8Array([137, 80, 78, 71]);
+    const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
     const dependencies = imageDependencies([
       new Response(`
         <meta property="og:title" content="Open day">

@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import { serializableTransaction } from "../db/serializableTransaction.js";
 import {
   fetchResourcePreview,
+  decodePreviewImage,
   type ResourcePreviewResult,
 } from "./resourcePreviewImage.js";
 
@@ -30,7 +31,10 @@ const rawResourceInputSchema = z.object({
   title: z.string().trim().min(1).max(160),
   description: z.string().trim().max(500).nullable(),
   previewEnabled: z.boolean(),
-  previewImageUrl: z.string().trim().nullable(),
+  previewImageUrl: z.string().trim().nullable().refine(
+    (value) => !value?.startsWith("data:") || decodePreviewImage(value) !== null,
+    "Carica un'immagine PNG, JPEG, WebP o GIF valida, fino a 512 KiB."
+  ),
   previewSiteName: z.string().trim().nullable(),
   isGlobal: z.boolean(),
   subgroupIds: z.array(z.string().trim().min(1)),
@@ -172,6 +176,17 @@ async function fetchedPreviewData(
     };
   }
 
+  const uploaded = input.previewImageUrl ? decodePreviewImage(input.previewImageUrl) : null;
+  if (uploaded) {
+    return {
+      previewImageUrl: null,
+      previewImageData: uploaded.data,
+      previewImageMimeType: uploaded.mimeType,
+      previewSiteName: input.previewSiteName,
+      previewFetchedAt: new Date(),
+    };
+  }
+
   try {
     const { preview, image } = await fetchPreview(input.url);
     return {
@@ -215,9 +230,17 @@ export function createSharedResourceService(
       const preview = await fetchedPreviewData(normalized, fetchPreview);
       const updated = await repository.audienceTransaction(async (transaction) => {
         const current = requireResource(await transaction.findResource(id), id);
+        const preserveImage = normalized.previewEnabled && current.previewEnabled && current.hasPreviewImage
+          && current.url === normalized.url && !normalized.previewImageUrl?.startsWith("data:");
         return transaction.updateResource(id, {
           ...resourceData(normalized, preview.previewFetchedAt),
           ...preview,
+          ...(preserveImage ? {
+            previewImageData: undefined,
+            previewImageMimeType: undefined,
+            previewSiteName: current.previewSiteName,
+            previewFetchedAt: current.previewFetchedAt,
+          } : {}),
           sortOrder: current.sortOrder,
         });
       });

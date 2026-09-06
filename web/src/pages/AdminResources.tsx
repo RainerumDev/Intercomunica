@@ -263,6 +263,7 @@ export default function AdminResources() {
         <ResourceEditor
           key={editor.resourceId ?? "new"}
           initialDraft={editor.draft}
+          initialResource={resources.find((resource) => resource.id === editor.resourceId)}
           subgroups={subgroups}
           onSave={save}
           onCancel={() => {

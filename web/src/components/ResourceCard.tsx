@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { SharedResource, SharedResourceDraft } from "../types";
-import { resourceCardFallback } from "./resourceForm";
+import { isInlinePreviewImage, resourceCardFallback } from "./resourceForm";
 
 interface Props {
   resource: SharedResource | SharedResourceDraft;
@@ -28,7 +28,7 @@ function ResourcePreview({ imageSrc, fallback }: { imageSrc: string | null; fall
 export default function ResourceCard({ resource, children, linked = true }: Props) {
   const imageSrc = "id" in resource && resource.hasPreviewImage
     ? `/api/resources/${encodeURIComponent(resource.id)}/preview-image?v=${encodeURIComponent(resource.updatedAt)}`
-    : null;
+    : resource.previewEnabled && isInlinePreviewImage(resource.previewImageUrl) ? resource.previewImageUrl : null;
   const content = (
     <>
       <div className="resource-card__preview">

@@ -1,7 +1,8 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { requireAdmin } from "../auth/session.js";
-import { fetchLinkPreview } from "../services/linkPreview.js";
+import { PreviewAuthenticationError } from "../services/linkPreview.js";
+import { fetchResourcePreview } from "../services/resourcePreviewImage.js";
 import {
   createResource,
   deleteResource,
@@ -81,10 +82,14 @@ resourcesRouter.post(
     if (!body) return;
 
     try {
-      const preview = await fetchLinkPreview(body.url);
-      res.json({ ...preview, imageUrl: null });
-    } catch {
-      res.status(422).json({ error: "Anteprima non disponibile" });
+      const { preview, image } = await fetchResourcePreview(body.url);
+      res.json({
+        ...preview,
+        imageUrl: image ? `data:${image.mimeType};base64,${Buffer.from(image.data).toString("base64")}` : null,
+      });
+    } catch (error) {
+      res.status(422).json({ error: error instanceof PreviewAuthenticationError
+        ? error.message : "Anteprima non disponibile" });
     }
   })
 );

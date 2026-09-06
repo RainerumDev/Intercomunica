@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { adminResourcesApi } from "../api";
-import type { SharedResourceDraft, Subgroup } from "../types";
+import type { SharedResource, SharedResourceDraft, Subgroup } from "../types";
 import { normalizeResourceDraft } from "./resourceForm";
 import ResourceCard from "./ResourceCard";
 
 interface Props {
   initialDraft: SharedResourceDraft;
+  initialResource?: SharedResource;
   subgroups: Subgroup[];
   onSave: (draft: SharedResourceDraft) => Promise<void>;
   onCancel: () => void;
@@ -21,13 +22,15 @@ function isPublicWebUrl(value: string): boolean {
   }
 }
 
-export default function ResourceEditor({ initialDraft, subgroups, onSave, onCancel, disabled = false }: Props) {
+export default function ResourceEditor({ initialDraft, initialResource, subgroups, onSave, onCancel, disabled = false }: Props) {
   const [draft, setDraft] = useState<SharedResourceDraft>(() => ({
     ...initialDraft,
     subgroupIds: [...initialDraft.subgroupIds],
   }));
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewNotice, setPreviewNotice] = useState<string | null>(null);
+  const [useSavedImage, setUseSavedImage] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [validationAttempted, setValidationAttempted] = useState(false);
@@ -78,6 +81,8 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
     previewGeneration.current += 1;
     setPreviewBusy(false);
     setPreviewError(null);
+    setPreviewNotice(null);
+    setUseSavedImage(false);
     setSaveError(null);
     setDraft((current) => ({
       ...current,
@@ -94,6 +99,8 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
       previewGeneration.current += 1;
       setPreviewBusy(false);
       setPreviewError(null);
+      setPreviewNotice(null);
+      setUseSavedImage(false);
     }
     setDraft((current) => ({
       ...current,
@@ -117,13 +124,15 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
     const fieldRevisions = { ...previewFieldRevisions.current };
     setPreviewBusy(true);
     setPreviewError(null);
+    setPreviewNotice(null);
     try {
       const preview = await adminResourcesApi.preview(requestedUrl);
       if (generation !== previewGeneration.current) return;
+      if (preview.imageUrl) setUseSavedImage(false);
+      if (!preview.imageUrl) setPreviewNotice("Il sito non offre un'immagine utilizzabile. Puoi caricare una copertina qui sotto.");
       setDraft((current) => current.url.trim() === requestedUrl
         ? {
             ...current,
-            url: preview.finalUrl,
             title: fieldRevisions.title === previewFieldRevisions.current.title
               ? current.title.trim() || preview.title || current.title
               : current.title,
@@ -133,7 +142,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
             previewEnabled: fieldRevisions.previewEnabled === previewFieldRevisions.current.previewEnabled
               ? true
               : current.previewEnabled,
-            previewImageUrl: null,
+            previewImageUrl: preview.imageUrl ?? current.previewImageUrl,
             previewSiteName: preview.siteName,
           }
         : current
@@ -149,6 +158,35 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
     }
   };
 
+  const uploadCover = async (file: File | undefined) => {
+    if (!file || disabled || saving) return;
+    const generation = ++previewGeneration.current;
+    setPreviewError(null);
+    setPreviewNotice(null);
+    setPreviewBusy(false);
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type) || file.size > 512 * 1024 || !file.size) {
+      setPreviewError("Scegli un'immagine PNG, JPEG, WebP o GIF fino a 512 KiB");
+      return;
+    }
+    setPreviewBusy(true);
+    try {
+      const imageUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("Impossibile leggere la copertina"));
+        reader.readAsDataURL(file);
+      });
+      if (generation !== previewGeneration.current) return;
+      setUseSavedImage(false);
+      setDraft((current) => ({ ...current, previewEnabled: true, previewImageUrl: imageUrl }));
+      setPreviewNotice("Copertina pronta. Salva la risorsa per applicarla.");
+    } catch (error) {
+      if (generation === previewGeneration.current) setPreviewError((error as Error).message);
+    } finally {
+      if (generation === previewGeneration.current) setPreviewBusy(false);
+    }
+  };
+
   const urlError = isPublicWebUrl(draft.url.trim()) ? null : "Inserisci un URL HTTP o HTTPS valido.";
   const titleError = draft.title.trim() ? null : "Inserisci un titolo.";
   const subgroupError = draft.isGlobal || draft.subgroupIds.length > 0
@@ -157,7 +195,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (disabled) return;
+    if (disabled || saving || previewBusy) return;
     setValidationAttempted(true);
     if (urlError || titleError || subgroupError) return;
     setSaving(true);
@@ -196,7 +234,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
             <button
               type="button"
               onClick={generatePreview}
-              disabled={disabled || previewBusy || !isPublicWebUrl(draft.url.trim())}
+              disabled={disabled || saving || previewBusy || !isPublicWebUrl(draft.url.trim())}
               className="button button--secondary"
             >
               {previewBusy ? "Generazione…" : "Genera anteprima"}
@@ -204,7 +242,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
           </div>
           {previewError && (
             <p role="alert" className="feedback feedback--warning mt-2">
-              {previewError}. Puoi comunque completare titolo e descrizione e salvare la risorsa.
+              {previewError}. Puoi caricare una copertina o salvare la risorsa senza immagine.
             </p>
           )}
           {validationAttempted && urlError && (
@@ -304,9 +342,21 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
         )}
 
         <div>
+          <label htmlFor="resource-cover" className="form-label">Carica copertina</label>
+          <input id="resource-cover" type="file" accept="image/png,image/jpeg,image/webp,image/gif"
+            disabled={disabled || saving} className="form-control" aria-describedby="resource-cover-help"
+            onChange={(event) => { void uploadCover(event.target.files?.[0]); event.target.value = ""; }} />
+          <p id="resource-cover-help" className="mt-1 text-sm text-gray-500">
+            PNG, JPEG, WebP o GIF, fino a 512 KiB. Utile anche per documenti che richiedono l'accesso.
+          </p>
+          {previewNotice && <p role="status" className="mt-2 text-sm text-gray-600">{previewNotice}</p>}
+        </div>
+
+        <div>
           <p className="form-label">Anteprima</p>
           <div className="max-w-md">
-            <ResourceCard resource={draft} linked={false} />
+            <ResourceCard resource={useSavedImage && initialResource && draft.previewEnabled
+              ? { ...initialResource, ...draft } : draft} linked={false} />
           </div>
         </div>
 
@@ -327,7 +377,7 @@ export default function ResourceEditor({ initialDraft, subgroups, onSave, onCanc
           </button>
           <button
             type="submit"
-            disabled={disabled || saving}
+            disabled={disabled || saving || previewBusy}
             className="button button--primary"
           >
             {saving ? "Salvataggio…" : "Salva"}

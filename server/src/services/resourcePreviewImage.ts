@@ -15,6 +15,24 @@ export type { ResourceImage } from "./sharedResourceService.js";
 
 export const MAX_PREVIEW_IMAGE_BYTES = 512 * 1024;
 
+// Uploaded covers are raster bytes, never remote URLs or active SVG/HTML.
+export function decodePreviewImage(value: string): ResourceImage | null {
+  if (value.length > Math.ceil(MAX_PREVIEW_IMAGE_BYTES / 3) * 4 + 40) return null;
+  const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);
+  if (!match) return null;
+  const data = Buffer.from(match[2], "base64");
+  if (!data.length || data.length > MAX_PREVIEW_IMAGE_BYTES || data.toString("base64") !== match[2]) return null;
+  const mimeType = match[1];
+  const signatureMatches = mimeType === "image/png"
+    ? data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+    : mimeType === "image/jpeg"
+      ? data[0] === 255 && data[1] === 216 && data[2] === 255
+      : mimeType === "image/gif"
+        ? /^GIF8[79]a$/.test(data.subarray(0, 6).toString("ascii"))
+        : data.subarray(0, 4).toString("ascii") === "RIFF" && data.subarray(8, 12).toString("ascii") === "WEBP";
+  return signatureMatches ? { data, mimeType } : null;
+}
+
 const MAX_REDIRECTS = 3;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const ALLOWED_IMAGE_TYPES = new Set([
@@ -154,12 +172,20 @@ export async function fetchResourcePreview(
   url: string,
   dependencies: LinkPreviewDependencies = defaultLinkPreviewDependencies
 ): Promise<ResourcePreviewResult> {
-  const preview = await fetchLinkPreview(url, dependencies);
+  const { imageCandidates, ...preview } = await fetchLinkPreview(url, dependencies);
   if (!preview.imageUrl) return { preview, image: null };
 
-  try {
-    return { preview, image: await fetchPublicImage(preview.imageUrl, dependencies) };
-  } catch {
-    return { preview, image: null };
+  const expiresAt = Date.now() + (dependencies.deadlineMs ?? PREVIEW_REQUEST_TIMEOUT_MS);
+  for (const imageUrl of imageCandidates ?? [preview.imageUrl]) {
+    const remainingMs = expiresAt - Date.now();
+    if (remainingMs <= 0) break;
+    try {
+      const downloaded = await fetchPublicImage(imageUrl, { ...dependencies, deadlineMs: remainingMs });
+      const image = decodePreviewImage(`data:${downloaded.mimeType};base64,${Buffer.from(downloaded.data).toString("base64")}`);
+      if (image) return { preview: { ...preview, imageUrl }, image: { ...image, data: new Uint8Array(image.data) } };
+    } catch {
+      // Try the next declared image within the same bounded image budget.
+    }
   }
+  return { preview, image: null };
 }

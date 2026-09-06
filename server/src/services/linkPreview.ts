@@ -24,6 +24,7 @@ export type LinkPreview = {
   description: string | null;
   imageUrl: string | null;
   siteName: string | null;
+  imageCandidates?: string[];
 };
 
 export type LinkPreviewLookupAddress = {
@@ -54,6 +55,13 @@ export class UnsafePreviewUrlError extends Error {
   constructor(message = "Preview URL is not a public HTTP destination") {
     super(message);
     this.name = "UnsafePreviewUrlError";
+  }
+}
+
+export class PreviewAuthenticationError extends Error {
+  constructor() {
+    super("Il sito richiede l'accesso. Carica una copertina per questa risorsa.");
+    this.name = "PreviewAuthenticationError";
   }
 }
 
@@ -865,21 +873,39 @@ function extractMetadata(html: string, pageUrl: URL): Omit<LinkPreview, "finalUr
   for (const match of html.matchAll(metaTagPattern)) {
     const attributes = attributesForTag(match[0]);
     const property = (attributes.property ?? attributes.name)?.trim().toLowerCase();
-    if (property?.startsWith("og:") && attributes.content !== undefined && !openGraph.has(property)) {
+    if (property && attributes.content !== undefined && !openGraph.has(property)) {
       openGraph.set(property, attributes.content);
     }
   }
 
   const titleElement = html.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i)?.[1];
   const title = normalizeMetadata(
-    openGraph.get("og:title") ?? titleElement?.replace(/<[^>]*>/g, ""),
+    openGraph.get("og:title") ?? openGraph.get("twitter:title") ?? titleElement?.replace(/<[^>]*>/g, ""),
     MAX_TITLE_LENGTH
   );
 
+  const icons: string[] = [];
+  const logos: string[] = [];
+  for (const match of html.matchAll(/<(?:link|img)\b(?:"[^"]*"|'[^']*'|[^'">])*>/gi)) {
+    const attributes = attributesForTag(match[0]);
+    const rel = attributes.rel?.toLowerCase().split(/\s+/) ?? [];
+    if (rel.some((value) => value === "apple-touch-icon" || value === "apple-touch-icon-precomposed")) {
+      if (attributes.href) icons.unshift(attributes.href);
+    } else if (rel.includes("icon") && /\.(png|jpe?g|webp|gif)(?:[?#]|$)/i.test(attributes.href ?? "")) {
+      icons.push(attributes.href);
+    } else if (/^<img\b/i.test(match[0]) && /logo/i.test(`${attributes.alt ?? ""} ${attributes.id ?? ""} ${attributes.class ?? ""} ${attributes.src ?? ""}`)
+      && /\.(png|jpe?g|webp|gif)(?:[?#]|$)/i.test(attributes.src ?? "")) {
+      logos.push(attributes.src);
+    }
+  }
+  const imageCandidates = [...new Set([openGraph.get("og:image"), openGraph.get("twitter:image"), openGraph.get("twitter:image:src"), ...logos, ...icons]
+    .map((value) => resolveImageUrl(value, pageUrl)).filter((value): value is string => value !== null))].slice(0, 4);
+
   return {
     title,
-    description: normalizeMetadata(openGraph.get("og:description"), MAX_DESCRIPTION_LENGTH),
-    imageUrl: resolveImageUrl(openGraph.get("og:image"), pageUrl),
+    description: normalizeMetadata(openGraph.get("og:description") ?? openGraph.get("twitter:description") ?? openGraph.get("description"), MAX_DESCRIPTION_LENGTH),
+    imageUrl: imageCandidates[0] ?? null,
+    ...(imageCandidates.length > 1 ? { imageCandidates } : {}),
     siteName: normalizeMetadata(openGraph.get("og:site_name"), MAX_SITE_NAME_LENGTH),
   };
 }
@@ -919,11 +945,14 @@ export async function fetchLinkPreview(
           const location = response.headers.get("location");
           if (!location) throw new Error("Preview redirect is missing a location");
           if (redirects >= MAX_REDIRECTS) throw new Error("Preview exceeded three redirects");
-          currentUrl = new URL(location, validatedUrl).toString();
+          const destination = new URL(location, validatedUrl);
+          if (destination.hostname === "accounts.google.com") throw new PreviewAuthenticationError();
+          currentUrl = destination.toString();
           redirects++;
           continue;
         }
 
+        if (response.status === 401 || response.status === 403) throw new PreviewAuthenticationError();
         if (!response.ok) throw new Error(`Preview request failed with status ${response.status}`);
         const rawContentType = response.headers.get("content-type");
         let contentType: string | undefined;

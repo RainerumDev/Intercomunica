@@ -1,5 +1,9 @@
 import type { SharedResourceDraft } from "../types";
 
+export function isInlinePreviewImage(value: string | null): value is string {
+  return Boolean(value && value.length <= 699092 && /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(value));
+}
+
 export const emptyResourceDraft: SharedResourceDraft = {
   url: "",
   title: "",
@@ -18,7 +22,7 @@ export function normalizeResourceDraft(draft: SharedResourceDraft): SharedResour
     title: draft.title.trim(),
     description,
     previewEnabled: draft.previewEnabled,
-    previewImageUrl: null,
+    previewImageUrl: draft.previewEnabled && isInlinePreviewImage(draft.previewImageUrl) ? draft.previewImageUrl : null,
     previewSiteName: draft.previewEnabled ? (draft.previewSiteName?.trim() || null) : null,
     isGlobal: draft.isGlobal,
     subgroupIds: draft.isGlobal

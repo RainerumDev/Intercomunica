@@ -10,7 +10,7 @@ const resourceOperations = vi.hoisted(() => ({
 }));
 
 const previewOperations = vi.hoisted(() => ({
-  fetchLinkPreview: vi.fn(),
+  fetchResourcePreview: vi.fn(),
 }));
 
 const database = vi.hoisted(() => ({
@@ -26,13 +26,14 @@ vi.mock("../services/sharedResourceService.js", async (importOriginal) => {
   return { ...actual, ...resourceOperations };
 });
 
-vi.mock("../services/linkPreview.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../services/linkPreview.js")>();
+vi.mock("../services/resourcePreviewImage.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/resourcePreviewImage.js")>();
   return { ...actual, ...previewOperations };
 });
 
 import { SESSION_COOKIE, signSession } from "../auth/session.js";
 import { createApp } from "../index.js";
+import { PreviewAuthenticationError } from "../services/linkPreview.js";
 import {
   InvalidResourceOrderError,
   ResourceNotFoundError,
@@ -166,7 +167,7 @@ describe("admin resource routes", () => {
 
   it("returns a bounded preview error without creating a resource", async () => {
     const privateFailure = "private upstream details ".repeat(100);
-    previewOperations.fetchLinkPreview.mockRejectedValue(new Error(privateFailure));
+    previewOperations.fetchResourcePreview.mockRejectedValue(new Error(privateFailure));
 
     const response = await request(createApp())
       .post("/api/admin/resources/preview")
@@ -185,13 +186,13 @@ describe("admin resource routes", () => {
   });
 
   it("never exposes the internally discovered Open Graph image URL", async () => {
-    previewOperations.fetchLinkPreview.mockResolvedValue({
+    previewOperations.fetchResourcePreview.mockResolvedValue({ image: { data: new Uint8Array([137,80,78,71,13,10,26,10]), mimeType: "image/png" }, preview: {
       finalUrl: "https://example.org/guide",
       title: "Guide",
       description: "A useful guide",
       imageUrl: "https://images.example.org/private-card.png",
       siteName: "Example",
-    });
+    } });
 
     const response = await request(createApp())
       .post("/api/admin/resources/preview")
@@ -203,10 +204,25 @@ describe("admin resource routes", () => {
       finalUrl: "https://example.org/guide",
       title: "Guide",
       description: "A useful guide",
-      imageUrl: null,
+      imageUrl: "data:image/png;base64,iVBORw0KGgo=",
       siteName: "Example",
     });
     expect(JSON.stringify(response.body)).not.toContain("images.example.org");
+  });
+
+  it("explains protected previews without exposing upstream details", async () => {
+    previewOperations.fetchResourcePreview.mockRejectedValue(new PreviewAuthenticationError());
+    const response = await request(createApp()).post("/api/admin/resources/preview")
+      .set("Cookie", adminCookie()).send({ url: "https://docs.google.com/guide" });
+    expect(response.status).toBe(422);
+    expect(response.body.error).toContain("richiede l'accesso");
+  });
+
+  it("rejects an invalid uploaded cover before persistence", async () => {
+    const response = await request(createApp()).post("/api/admin/resources")
+      .set("Cookie", adminCookie()).send({ ...resourceInput, previewImageUrl: "data:image/svg+xml;base64,PHN2Zy8+" });
+    expect(response.status).toBe(400);
+    expect(resourceOperations.createResource).not.toHaveBeenCalled();
   });
 
   it("rejects a malformed preview URL as invalid request data", async () => {
@@ -217,7 +233,7 @@ describe("admin resource routes", () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error).toBe("Dati non validi");
-    expect(previewOperations.fetchLinkPreview).not.toHaveBeenCalled();
+    expect(previewOperations.fetchResourcePreview).not.toHaveBeenCalled();
   });
 
   it("updates a resource from validated input and returns the updated resource", async () => {

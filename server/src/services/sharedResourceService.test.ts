@@ -615,6 +615,35 @@ describe("shared resources", () => {
 });
 
 describe("preview persistence", () => {
+  it("saves an uploaded cover without accessing the protected destination", async () => {
+    const repository = new FakeResourceRepository();
+    const fetchPreview = vi.fn<() => Promise<ResourcePreviewResult>>();
+    const service = createSharedResourceService(repository, fetchPreview);
+    const bytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1sAAAAASUVORK5CYII=", "base64");
+    const created = await service.createResource({
+      ...input, previewImageUrl: `data:image/png;base64,${bytes.toString("base64")}`,
+    });
+    expect(fetchPreview).not.toHaveBeenCalled();
+    expect(repository.images.get(created.id)).toEqual({ data: new Uint8Array(bytes), mimeType: "image/png" });
+    expect(created.previewImageUrl).toBeNull();
+  });
+
+  it("rejects an active document disguised as an uploaded PNG", async () => {
+    const service = createSharedResourceService(new FakeResourceRepository(), vi.fn());
+    await expect(service.createResource({
+      ...input, previewImageUrl: `data:image/png;base64,${Buffer.from('<svg onload="alert(1)"></svg>').toString("base64")}`,
+    })).rejects.toThrow();
+  });
+
+  it("preserves the saved cover on a title-only edit even if the destination fails", async () => {
+    const repository = new FakeResourceRepository([resource({ id: "r1", url: input.url, hasPreviewImage: true })]);
+    const image = { data: new Uint8Array([1, 2, 3]), mimeType: "image/png" };
+    repository.images.set("r1", image);
+    const service = createSharedResourceService(repository, async () => { throw new Error("401"); });
+    await service.updateResource("r1", { ...input, title: "Nuovo titolo" });
+    expect(repository.images.get("r1")).toEqual(image);
+  });
+
   it("persists a securely fetched preview image with its MIME type", async () => {
     const repository = new FakeResourceRepository();
     const image = { data: new Uint8Array([137, 80, 78, 71]), mimeType: "image/png" };
@@ -690,7 +719,7 @@ describe("preview persistence", () => {
     expect(repository.images.has("r1")).toBe(false);
   });
 
-  it("replaces persisted image bytes when an enabled resource is updated", async () => {
+  it("replaces persisted image bytes when the resource URL changes", async () => {
     const repository = new FakeResourceRepository([
       resource({ id: "r1", subgroupIds: ["g1"], hasPreviewImage: true }),
     ]);
@@ -707,7 +736,7 @@ describe("preview persistence", () => {
       image: replacement,
     }));
 
-    await service.updateResource("r1", input);
+    await service.updateResource("r1", { ...input, url: "https://example.org/new-resource" });
 
     expect(repository.images.get("r1")).toEqual(replacement);
     expect(repository.updated[0]).toMatchObject({
