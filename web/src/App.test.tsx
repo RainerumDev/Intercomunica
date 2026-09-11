@@ -45,6 +45,20 @@ afterEach(() => {
 });
 
 describe("authenticated portal shell", () => {
+  it("includes a decorative icon alongside every navigation label", () => {
+    render(<MemoryRouter><App /></MemoryRouter>);
+    const navigation = screen.getByRole("navigation", { name: "Navigazione principale" });
+    const links = navigation.querySelectorAll("a");
+    expect(links).toHaveLength(5);
+    for (const link of links) {
+      const icon = link.querySelector("svg");
+      expect(icon).not.toBeNull();
+      expect(icon?.getAttribute("aria-hidden")).toBe("true");
+      expect(icon?.getAttribute("focusable")).toBe("false");
+      expect(link.textContent?.trim()).toBeTruthy();
+    }
+  });
+
   it("exposes the five admin destinations and marks Risorse as the current route", async () => {
     const user = userEvent.setup();
     const { container } = render(

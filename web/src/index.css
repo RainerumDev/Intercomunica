@@ -158,6 +158,12 @@ button {
   background: var(--surface-soft);
 }
 
+.portal-nav__icon {
+  display: none;
+  width: 22px;
+  height: 22px;
+}
+
 .portal-nav__link--active {
   color: white;
   background: var(--brand);
@@ -1764,7 +1770,7 @@ button {
 
 @media (max-width: 767px) {
   .portal-shell--authenticated {
-    padding-bottom: calc(2.75rem + 2px + env(safe-area-inset-bottom));
+    padding-bottom: calc(4rem + 2px + env(safe-area-inset-bottom));
   }
 
   .portal-header__inner {
@@ -1812,12 +1818,23 @@ button {
 
   .portal-nav__link {
     display: grid;
-    min-height: 44px;
+    min-height: 64px;
+    grid-template-rows: 22px 1fr;
+    gap: 3px;
     place-items: center;
-    padding: 0.45rem 0.25rem;
+    padding: 0.3rem 0.2rem;
     border: 0;
     border-radius: 0;
     font-size: 0.72rem;
+  }
+
+  .portal-nav__icon {
+    display: block;
+  }
+
+  .portal-nav__link span {
+    max-width: 100%;
+    overflow-wrap: anywhere;
   }
 
   .portal-nav__link:not(.portal-nav__link--active) {
@@ -1826,7 +1843,7 @@ button {
   }
 
   .teacher-alphabet {
-    max-height: calc(100dvh - 5.75rem - 2.75rem - 2px - env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 5.75rem - 4rem - 2px - env(safe-area-inset-bottom));
   }
 
   .portal-user__avatar {
@@ -1869,7 +1886,7 @@ button {
   .directory-create-command {
     position: fixed;
     right: 1rem;
-    bottom: calc(2.75rem + 1rem + env(safe-area-inset-bottom));
+    bottom: calc(4rem + 1rem + env(safe-area-inset-bottom));
     z-index: 20;
     width: 48px;
     height: 48px;
@@ -1956,7 +1973,7 @@ button {
   }
 }
 
-@media (max-width: 767px) and (max-height: 216px) {
+@media (max-width: 767px) and (max-height: 236px) {
   .teacher-alphabet {
     position: static;
     max-height: none;

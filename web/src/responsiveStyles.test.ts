@@ -99,7 +99,7 @@ describe("mobile responsive controls", () => {
 describe("authenticated mobile shell", () => {
   it("reserves fixed-navigation clearance after the footer without doubling main padding", () => {
     const shell = ruleDeclarations(".portal-shell--authenticated");
-    expect(shell).toContain("padding-bottom: calc(2.75rem + 2px + env(safe-area-inset-bottom))");
+    expect(shell).toContain("padding-bottom: calc(4rem + 2px + env(safe-area-inset-bottom))");
 
     const main = ruleDeclarations(".portal-main");
     expect(main).toContain("padding-bottom: 4rem");

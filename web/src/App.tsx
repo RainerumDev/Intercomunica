@@ -10,6 +10,24 @@ import LegalFooter from "./components/LegalFooter";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 
+const navIconPaths = {
+  bacheca: "M4 3h16v18H4z M8 7h8 M8 11h8 M8 15h5",
+  risorse: "M3 7V4h7l2 3h9v13H3z",
+  calendario: "M4 5h16v16H4z M8 3v4 M16 3v4 M4 10h16 M8 14h2 M14 14h2 M8 17h2",
+  directory: "M15 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0 M6 21v-3a6 6 0 0 1 12 0v3 M18 4a3 3 0 0 1 0 6 M19 13a4 4 0 0 1 3 4v3 M6 4a3 3 0 0 0 0 6 M5 13a4 4 0 0 0-3 4v3",
+  impostazioni: "M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6",
+};
+
+function NavIcon({ name }: { name: keyof typeof navIconPaths }) {
+  return (
+    <svg className="portal-nav__icon" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden="true" focusable="false">
+      <path d={navIconPaths[name]} />
+    </svg>
+  );
+}
+
 function Nav() {
   const { me, logout } = useAuth();
   const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -35,20 +53,25 @@ function Nav() {
 
         <nav className="portal-nav" aria-label="Navigazione principale">
           <NavLink to="/" end className={linkClass}>
-            Bacheca
+            <NavIcon name="bacheca" />
+            <span>Bacheca</span>
           </NavLink>
           <NavLink to="/risorse" className={linkClass}>
-            Risorse
+            <NavIcon name="risorse" />
+            <span>Risorse</span>
           </NavLink>
           <NavLink to="/calendario" className={linkClass}>
-            Calendario
+            <NavIcon name="calendario" />
+            <span>Calendario</span>
           </NavLink>
           <NavLink to="/directory" className={linkClass}>
-            Gruppi e docenti
+            <NavIcon name="directory" />
+            <span>Gruppi e docenti</span>
           </NavLink>
           {me?.role === "ADMIN" && (
             <NavLink to="/admin/settings" className={linkClass}>
-              Impostazioni
+              <NavIcon name="impostazioni" />
+              <span>Impostazioni</span>
             </NavLink>
           )}
         </nav>
