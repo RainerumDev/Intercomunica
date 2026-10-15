@@ -1,7 +1,9 @@
 import { gmailApi } from "./master.js";
 import { withRetry } from "./retry.js";
+import { prisma } from "../db.js";
 
 export interface SendEmailInput {
+  fromName: string;
   to: string[];
   bcc: string[];
   replyTo?: string;
@@ -19,7 +21,19 @@ function encodeHeader(value: string): string {
 /** Send an email from the master account via the Gmail API. */
 export async function sendEmail(input: SendEmailInput): Promise<string> {
   const gmail = await gmailApi();
-  const headers: string[] = [];
+  const cfg = await prisma.appConfig.findUnique({
+    where: { id: 1 },
+    select: { masterEmail: true },
+  });
+  if (!cfg?.masterEmail) throw new Error("Indirizzo dell'account master non configurato");
+
+  // Display names are phrases: quote ASCII punctuation and encode Unicode.
+  const name = input.fromName.replace(/[\r\n]+/g, " ").trim();
+  const encodedName = encodeHeader(name);
+  const displayName = encodedName === name
+    ? `"${name.replace(/[\\"]/g, "\\$&")}"`
+    : encodedName;
+  const headers: string[] = [`From: ${displayName} <${cfg.masterEmail}>`];
   if (input.to.length > 0) headers.push(`To: ${input.to.join(", ")}`);
   if (input.bcc.length > 0) headers.push(`Bcc: ${input.bcc.join(", ")}`);
   if (input.replyTo) headers.push(`Reply-To: ${input.replyTo}`);

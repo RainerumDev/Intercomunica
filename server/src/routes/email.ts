@@ -7,6 +7,15 @@ import { h, parseBody } from "./helpers.js";
 
 export const emailRouter = Router();
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 const sendSchema = z.object({
   subgroupId: z.string().min(1),
   /** Flusso 4.2 — "A:" (to) default, "CCN:" (bcc) optional */
@@ -19,7 +28,7 @@ const sendSchema = z.object({
 
 /**
  * Flusso 4 — send an email to all members of a subgroup.
- * Sent from the master account; Reply-To set to the logged-in teacher.
+ * Sent from the master account with the logged-in teacher's display name and Reply-To.
  */
 emailRouter.post(
   "/send",
@@ -46,12 +55,19 @@ emailRouter.post(
       return;
     }
 
+    const teacher = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { name: true },
+    });
+    const teacherName = teacher?.name?.trim() || req.user!.email;
+    const footer = `<p style="margin-top:24px;padding-top:12px;border-top:1px solid #ddd;font-size:12px;color:#666">Mail inviata da ${escapeHtml(teacherName)} a ${escapeHtml(subgroup.name)} attraverso <a href="https://rainerum.it/intercomunica">Intercomunica</a>.</p>`;
     const messageId = await sendEmail({
+      fromName: `${teacherName} | Intercomunica`,
       to: body.mode === "to" ? unique : [],
       bcc: body.mode === "bcc" ? unique : [],
       replyTo: req.user!.email,
       subject: body.subject,
-      bodyHtml: body.bodyHtml,
+      bodyHtml: `${body.bodyHtml}\n${footer}`,
     });
     res.json({ ok: true, messageId, recipientCount: unique.length });
   })
