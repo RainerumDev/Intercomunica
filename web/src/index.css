@@ -1508,6 +1508,7 @@ button {
 
 .group-detail__admin-actions {
   gap: 0.25rem;
+  flex-shrink: 0;
 }
 
 .group-detail__icon-button {

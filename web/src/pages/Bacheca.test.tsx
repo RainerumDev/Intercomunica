@@ -44,6 +44,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -68,6 +69,8 @@ describe("Bacheca", () => {
   });
 
   it("requests and renders only the event payload", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-01T12:00:00.000Z"));
     const get = vi.spyOn(api, "get").mockResolvedValue(payloadWithEvents);
     render(<Bacheca />);
 

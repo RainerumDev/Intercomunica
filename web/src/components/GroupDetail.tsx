@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { sortMembers } from "../subgroups";
 import type { Subgroup } from "../types";
 
@@ -34,8 +35,31 @@ function TrashIcon() {
   );
 }
 
+function DownloadIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m-5-5 5 5 5-5M4 16v4a1 1 0 001 1h14a1 1 0 001-1v-4" />
+    </svg>
+  );
+}
+
 export default function GroupDetail({ subgroup, isAdmin, onEdit, onDelete, onEmail }: Props) {
   const members = sortMembers(subgroup.members);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  async function handleDownload() {
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      const { downloadGroupMembers } = await import("../groupMembersExport");
+      await downloadGroupMembers(subgroup);
+    } catch {
+      setDownloadError("Impossibile scaricare l’Excel. Riprova.");
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <section className="surface-card surface-card--padded group-detail" aria-labelledby="group-detail-title">
@@ -44,17 +68,22 @@ export default function GroupDetail({ subgroup, isAdmin, onEdit, onDelete, onEma
           <p className="group-detail__eyebrow">{subgroup.folder?.trim() || "Generale"}</p>
           <h2 id="group-detail-title" className="section-heading group-detail__title">{subgroup.name}</h2>
         </div>
-        {isAdmin && (
-          <div className="group-detail__admin-actions">
+        <div className="group-detail__admin-actions">
+          <button type="button" onClick={handleDownload} disabled={downloading} aria-busy={downloading} aria-label="Download Excel membri" title="Download Excel membri" className="group-detail__icon-button text-action">
+            <DownloadIcon />
+          </button>
+          {isAdmin && <>
             <button type="button" onClick={onEdit} aria-label="Modifica gruppo" title="Modifica gruppo" className="group-detail__icon-button text-action">
               <EditIcon />
             </button>
             <button type="button" onClick={onDelete} aria-label="Elimina gruppo" title="Elimina gruppo" className="group-detail__icon-button text-action text-action--danger">
               <TrashIcon />
             </button>
-          </div>
-        )}
+          </>}
+        </div>
       </div>
+
+      {downloadError && <p role="alert" className="feedback feedback--error">{downloadError}</p>}
 
       {subgroup.description?.trim() && <p className="group-detail__description">{subgroup.description}</p>}
 
